@@ -365,7 +365,7 @@ function ReplayCard({ replay, onOpen }) {
 
   return (
     <div className="replay-card" onClick={onOpen}>
-      <div className="replay-card__thumb">
+      <div className="replay-card__thumb" style={{ aspectRatio: `${cols} / ${rows}` }}>
         <div
           className="replay-card__maze"
           style={{

@@ -148,6 +148,7 @@ function App({ user, initialState }) {
     { id: "quests", label: "Quests", glyph: "★", count: quests.filter(q => q.progress < q.target).length },
     { id: "training", label: "Training", glyph: "✦", count: masteredCount > 0 ? `${masteredCount}★` : null },
     { id: "battle", label: "Battle", glyph: "▶", count: "LIVE", live: true },
+    { id: "race", label: "Race", glyph: "»", count: "LIVE", live: true },
     { id: "replays", label: "Replays", glyph: "◷", count: replays.length },
     { id: "brain", label: "Brain", glyph: "❖", count: `G${ai.generation}` },
   ];
@@ -243,6 +244,17 @@ function App({ user, initialState }) {
             <BattleScreen
               ai={aiWithSkills}
               seed={battleSeed}
+              mode="battle"
+              onReseed={() => setBattleSeed((s) => s + 1)}
+              onToast={showToast}
+              onMatchComplete={onMatchComplete}
+            />
+          )}
+          {tab === "race" && (
+            <BattleScreen
+              ai={aiWithSkills}
+              seed={battleSeed + 9000}
+              mode="race"
               onReseed={() => setBattleSeed((s) => s + 1)}
               onToast={showToast}
               onMatchComplete={onMatchComplete}

@@ -144,20 +144,72 @@ function bfsPath(grid, cols, rows, start, goal) {
 const AGENT_NAMES = ["ALBRT-7", "VEX-22", "PYTH-13", "NOMAD-9", "GLITCH", "ORACLE", "RUST-4", "PRISM"];
 const NON_YOU_CLASSES = ["polar", "angel", "rainbow", "helmet", "engineer", "polar", "angel"];
 
-function createBattleSim(seed, you) {
-  const cols = 21, rows = 15; // smaller for 3D performance
-  const maze = genMaze(cols, rows, seed);
-  const { grid, treasure, obstacles } = maze;
+// ---------- Race-track generator (open vertical corridor) ----------
+// Used by the Race mode. Different shape (tall + narrow) from genMaze
+// but returns the same { grid, cols, rows, treasure, obstacles } shape
+// so scene3d.jsx and replays can render it transparently.
+function genRaceTrack(cols, rows, seed) {
+  let s = seed;
+  const rand = () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+  const grid = Array.from({ length: rows }, () => Array(cols).fill(0));
+  // Border walls only
+  for (let x = 0; x < cols; x++) { grid[0][x] = 1; grid[rows - 1][x] = 1; }
+  for (let y = 0; y < rows; y++) { grid[y][0] = 1; grid[y][cols - 1] = 1; }
+  // Finish line at the top center — reuses the existing "treasure" mechanic
+  const treasure = [Math.floor(cols / 2), 1];
 
-  const spawnPool = [
+  // Obstacles — denser than battle, biased toward jump pads + spikes
+  const obstacles = Array.from({ length: rows }, () => Array(cols).fill(null));
+  const eligible = [];
+  for (let y = 3; y < rows - 3; y++) {
+    for (let x = 1; x < cols - 1; x++) eligible.push([x, y]);
+  }
+  const place = (type, count) => {
+    for (let i = 0; i < count && eligible.length; i++) {
+      const idx = Math.floor(rand() * eligible.length);
+      const [x, y] = eligible.splice(idx, 1)[0];
+      obstacles[y][x] = { type };
+    }
+  };
+  place(OBSTACLE_TYPES.SPIKE, Math.floor(rand() * 4) + 3); // 3–6
+  place(OBSTACLE_TYPES.JUMP,  Math.floor(rand() * 4) + 4); // 4–7
+  place(OBSTACLE_TYPES.SLOW,  Math.floor(rand() * 3) + 2); // 2–4
+  place(OBSTACLE_TYPES.SPEED, Math.floor(rand() * 4) + 4); // 4–7
+
+  return { grid, cols, rows, treasure, obstacles };
+}
+
+// ---------- Spawn pool helpers ----------
+function defaultBattleSpawns(cols, rows) {
+  return [
     [1, 1], [cols - 2, 1], [1, rows - 2], [cols - 2, rows - 2],
     [Math.floor(cols / 2), 1], [Math.floor(cols / 2), rows - 2],
     [1, Math.floor(rows / 2)], [cols - 2, Math.floor(rows / 2)],
   ];
+}
+function defaultRaceSpawns(cols, rows, n) {
+  const startY = rows - 2;
+  const spacing = Math.max(1, Math.floor((cols - 2) / n));
+  return Array.from({ length: n }, (_, i) =>
+    [Math.min(cols - 2, 1 + i * spacing + Math.floor(spacing / 2)), startY]
+  );
+}
+
+function createBattleSim(seed, you, opts) {
+  const cols = opts?.cols ?? 21;
+  const rows = opts?.rows ?? 15;
+  const mazeGen = opts?.mazeGen ?? genMaze;
+  const numAgents = opts?.numAgents ?? 8;
+  const maze = mazeGen(cols, rows, seed);
+  const { grid, treasure, obstacles } = maze;
+  const spawnPool = opts?.spawnPool ?? defaultBattleSpawns(cols, rows);
 
   const agents = [];
-  for (let i = 0; i < 8; i++) {
-    const [sx, sy] = spawnPool[i];
+  for (let i = 0; i < numAgents; i++) {
+    const [sx, sy] = spawnPool[i % spawnPool.length];
     if (grid[sy][sx] === 1) grid[sy][sx] = 0;
     const cls = i === 0 ? you.class : NON_YOU_CLASSES[i - 1];
     const c = CLASSES[cls];
@@ -371,6 +423,17 @@ function createBattleSim(seed, you) {
   };
 }
 
+// Race mode factory — same engine, different map + spawn shape
+function createRaceSim(seed, you) {
+  const cols = 9, rows = 30;
+  return createBattleSim(seed, you, {
+    cols, rows,
+    mazeGen: genRaceTrack,
+    numAgents: 6,
+    spawnPool: defaultRaceSpawns(cols, rows, 6),
+  });
+}
+
 // Run a sim to completion (or maxTicks) and produce a replay record:
 // - per-tick snapshots of every agent's pos/hp/state
 function buildReplay(seed, you, maxTicks = 800) {
@@ -406,4 +469,8 @@ function buildReplay(seed, you, maxTicks = 800) {
   };
 }
 
-Object.assign(window, { genMaze, bfsPath, createBattleSim, buildReplay });
+Object.assign(window, {
+  genMaze, genRaceTrack, bfsPath,
+  createBattleSim, createRaceSim,
+  buildReplay,
+});
