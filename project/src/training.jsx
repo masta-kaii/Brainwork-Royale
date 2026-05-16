@@ -256,14 +256,25 @@ function TrainingScreen({ uid, ai, skills, profile, brains, onSkillProgress, onS
           {/* RIGHT — arena + train controls */}
           <div className="training-main">
             {activeIsReal ? (
-              <BalanceTrainer
-                uid={uid}
-                profile={profile}
-                brains={brains}
-                onSpendCoins={onSpendCoins}
-                onToast={onToast}
-                onBrainSaved={onBrainSaved}
-              />
+              typeof BalanceTrainer === "function" ? (
+                <BalanceTrainer
+                  uid={uid}
+                  profile={profile}
+                  brains={brains}
+                  onSpendCoins={onSpendCoins}
+                  onToast={onToast}
+                  onBrainSaved={onBrainSaved}
+                />
+              ) : (
+                <div className="card" style={{ padding: 20 }}>
+                  <div className="card__label">Balance trainer not loaded</div>
+                  <div className="mono tiny" style={{ color: "var(--ink-2)", marginTop: 8 }}>
+                    The physics + NN module failed to register. Hard-refresh
+                    (Ctrl/Cmd+Shift+R) and check DevTools console for the
+                    actual error.
+                  </div>
+                </div>
+              )
             ) : (<>
             <div className="training-stage">
               <div ref={stageRef} className="three-mount" />

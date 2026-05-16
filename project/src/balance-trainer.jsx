@@ -16,7 +16,6 @@ function BalanceTrainer({ uid, profile, brains, onSpendCoins, onToast, onBrainSa
   const [session, setSession] = React.useState(null); // { generationsRemaining, packId, packLabel }
   const [stats, setStats] = React.useState({ gen: 0, best: 0, avg: 0 });
   const [ready, setReady] = React.useState(false);
-
   const [failed, setFailed] = React.useState(false);
 
   // Wait for Rapier (or note it failed)
@@ -34,49 +33,29 @@ function BalanceTrainer({ uid, profile, brains, onSpendCoins, onToast, onBrainSa
     }
   }, []);
 
-  if (failed) {
-    const err = window.RAPIER_ERROR;
-    const code = err?.message || String(err || "unknown");
-    return (
-      <div className="card" style={{ padding: 20 }}>
-        <div className="card__label">Balance training unavailable</div>
-        <div className="mono tiny" style={{ color: "var(--ink-2)", marginTop: 8, lineHeight: 1.6 }}>
-          The Rapier physics engine failed to load
-          {code === "init-timeout" ? " (timed out after 20s — slow network or CDN issue)" : ""}.
-          <br /><br />
-          Things to try:
-          <ul style={{ margin: "8px 0 0 20px", padding: 0 }}>
-            <li>Hard-refresh: Ctrl/Cmd + Shift + R</li>
-            <li>Try a different browser (Chrome / Firefox / Safari latest)</li>
-            <li>Open DevTools → Console and paste the red error here so we can pin it down</li>
-          </ul>
-          <div style={{ marginTop: 10, color: "var(--ink-3)" }}>
-            Error: <span style={{ color: "var(--magenta)" }}>{code}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Mount the 3D scene
   React.useEffect(() => {
-    if (!stageRef.current || !ready) return;
+    if (!stageRef.current || !ready || failed) return;
     sceneRef.current = window.mountRagdollScene(stageRef.current);
 
     // Show a static spawn pose right away so the arena isn't empty
-    if (window.brainEngine?.isReady?.()) {
-      const previewWorld = window.brainEngine.makeWorld();
-      const rag = window.brainEngine.createRagdoll(previewWorld);
-      // Single step to settle slightly
-      previewWorld.step();
-      const snap = {};
-      for (const [name, b] of Object.entries(rag.bodies)) {
-        const t = b.translation(), r = b.rotation();
-        snap[name] = { x: t.x, y: t.y, z: t.z, qx: r.x, qy: r.y, qz: r.z, qw: r.w };
+    try {
+      if (window.brainEngine?.isReady?.()) {
+        const previewWorld = window.brainEngine.makeWorld();
+        const rag = window.brainEngine.createRagdoll(previewWorld);
+        previewWorld.step();
+        const snap = {};
+        for (const [name, b] of Object.entries(rag.bodies)) {
+          const t = b.translation(), r = b.rotation();
+          snap[name] = { x: t.x, y: t.y, z: t.z, qx: r.x, qy: r.y, qz: r.z, qw: r.w };
+        }
+        sceneRef.current.applySnapshot(snap);
+        window.brainEngine.destroyRagdoll(previewWorld, rag);
+        previewWorld.free?.();
       }
-      sceneRef.current.applySnapshot(snap);
-      window.brainEngine.destroyRagdoll(previewWorld, rag);
-      previewWorld.free?.();
+    } catch (e) {
+      console.error("Preview ragdoll failed", e);
+      setFailed(true);
     }
 
     let raf;
@@ -85,18 +64,15 @@ function BalanceTrainer({ uid, profile, brains, onSpendCoins, onToast, onBrainSa
       raf = requestAnimationFrame(loop);
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      // Drive the playback of the best genome's trace
       const pb = playbackRef.current;
       if (pb.trace && pb.trace.length > 0) {
         pb.lastT += dt;
-        // Each trace frame is brainEngine.PHYS_DT * TRACE_EVERY = 1/60 * 3 = 50ms
         const FRAME_MS = (window.brainEngine?.PHYS_DT || 1 / 60) * 3 * 1000;
         const target = Math.floor(pb.lastT * 1000 / FRAME_MS);
         if (target !== pb.idx) {
           pb.idx = Math.min(target, pb.trace.length - 1);
           sceneRef.current?.applySnapshot(pb.trace[pb.idx]);
           if (pb.idx >= pb.trace.length - 1) {
-            // Trace ended — mark fallen for a beat
             sceneRef.current?.setFallen(true);
           }
         }
@@ -111,7 +87,7 @@ function BalanceTrainer({ uid, profile, brains, onSpendCoins, onToast, onBrainSa
       trainerRef.current?.stop?.();
       trainerRef.current = null;
     };
-  }, [ready]);
+  }, [ready, failed]);
 
   // Run generations sequentially while a session is active
   React.useEffect(() => {
@@ -121,20 +97,15 @@ function BalanceTrainer({ uid, profile, brains, onSpendCoins, onToast, onBrainSa
       while (!cancelled && session.generationsRemaining > 0) {
         const res = await trainerRef.current.runOneGeneration();
         if (!res || cancelled) break;
-        // Update React UI
         setStats({ gen: res.gen, best: res.bestFitness, avg: res.avgFitness });
-        // Queue the best genome's trace for playback
         playbackRef.current = { trace: lastBestRef.current.trace || [], idx: 0, lastT: 0 };
         sceneRef.current?.setFallen(false);
-        // Decrement
         session.generationsRemaining -= 1;
         setSession({ ...session });
-        // Wait for the trace to (mostly) play out before kicking the next gen
         const playMs = Math.min(2200, (playbackRef.current.trace?.length || 0) * 50 + 400);
         await new Promise((r) => setTimeout(r, playMs));
       }
       if (!cancelled) {
-        // Session done — save best brain
         const best = lastBestRef.current.brain;
         if (best) {
           const json = window.brainEngine.brainToJSON(best, {
@@ -180,9 +151,30 @@ function BalanceTrainer({ uid, profile, brains, onSpendCoins, onToast, onBrainSa
     onToast?.(`Training Balance · ${generations} generations`);
   }
 
-  function abortSession() {
-    trainerRef.current?.stop?.();
-    setSession(null);
+  // -------- All hooks above. Early returns below. --------
+
+  if (failed) {
+    const err = window.RAPIER_ERROR;
+    const code = err?.message || String(err || "unknown");
+    return (
+      <div className="card" style={{ padding: 20 }}>
+        <div className="card__label">Balance training unavailable</div>
+        <div className="mono tiny" style={{ color: "var(--ink-2)", marginTop: 8, lineHeight: 1.6 }}>
+          The Rapier physics engine failed to load
+          {code === "init-timeout" ? " (timed out after 20s — slow network or CDN issue)" : ""}.
+          <br /><br />
+          Things to try:
+          <ul style={{ margin: "8px 0 0 20px", padding: 0 }}>
+            <li>Hard-refresh: Ctrl/Cmd + Shift + R</li>
+            <li>Try a different browser (Chrome / Firefox / Safari latest)</li>
+            <li>Open DevTools → Console and paste the red error here so we can pin it down</li>
+          </ul>
+          <div style={{ marginTop: 10, color: "var(--ink-3)" }}>
+            Error: <span style={{ color: "var(--magenta)" }}>{code}</span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Pack definitions for this skill (small / medium / large generation counts)
