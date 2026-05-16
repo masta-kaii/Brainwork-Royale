@@ -111,6 +111,53 @@ function createScene3D(container) {
   let currentReplay = null;
   let elapsed = 0;
 
+  // ---- Particle pool (sparks on hit / KO) ----
+  const particles = [];
+  const sparkGeo = new THREE.SphereGeometry(0.05, 6, 6);
+
+  function spawnSparks(x, y, z, count, colorHex, life = 0.6) {
+    for (let i = 0; i < count; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: colorHex, transparent: true, opacity: 0.95,
+      });
+      const m = new THREE.Mesh(sparkGeo, mat);
+      m.position.set(x, y, z);
+      const ang = Math.random() * Math.PI * 2;
+      const horiz = 0.4 + Math.random() * 1.4;
+      const up = 1.0 + Math.random() * 1.8;
+      particles.push({
+        mesh: m,
+        vx: Math.cos(ang) * horiz,
+        vy: up,
+        vz: Math.sin(ang) * horiz,
+        life: 0, maxLife: life * (0.7 + Math.random() * 0.5),
+        scale0: 0.8 + Math.random() * 0.6,
+      });
+      scene.add(m);
+    }
+  }
+
+  function updateParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life += dt;
+      if (p.life >= p.maxLife) {
+        scene.remove(p.mesh);
+        p.mesh.material.dispose();
+        particles.splice(i, 1);
+        continue;
+      }
+      const t = p.life / p.maxLife;
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.mesh.position.z += p.vz * dt;
+      p.vy -= 6.5 * dt; // gravity
+      p.mesh.material.opacity = 0.95 * (1 - t);
+      const s = p.scale0 * (1 - t * 0.5);
+      p.mesh.scale.set(s, s, s);
+    }
+  }
+
   // Pre-compute PEP base normalization (height + ground-offset) ONCE
   let pepBaseInfo = null;
   function getPepBaseInfo() {
@@ -426,6 +473,13 @@ function createScene3D(container) {
       curX: 0, curZ: 0, facing: 0, alive: true,
       _attackUntilTick: -1,
       _hitUntilTick: -1,
+      // Physics-feel state — knockback offset that decays per frame
+      knockX: 0, knockZ: 0,
+      // Track which jump and hit events we've already reacted to so
+      // we don't re-spawn sparks every frame inside the trigger window.
+      _lastJumpFromTick: -1,
+      _lastHitVfxTick: -1,
+      _wasAlive: true,
     };
   }
 
@@ -470,6 +524,9 @@ function createScene3D(container) {
   function setReplay(replay) {
     agentVisuals.forEach((v) => { scene.remove(v.group); disposeNode(v.group); });
     agentVisuals = [];
+    // Clear leftover particles from the previous match
+    particles.forEach((p) => { scene.remove(p.mesh); p.mesh.material.dispose(); });
+    particles.length = 0;
 
     currentReplay = replay;
     buildMaze({ grid: replay.maze.grid, cols: replay.cols, rows: replay.rows, treasure: replay.treasure });
@@ -510,28 +567,50 @@ function createScene3D(container) {
       const v = agentVisuals[i];
       const sCur = cur[i], sNxt = nxt[i];
 
-      // Position lerp
+      // Position lerp (cell-to-cell)
       const fx = sCur.x * CELL, fz = sCur.y * CELL;
       const tx = sNxt.x * CELL, tz = sNxt.y * CELL;
       v.curX = fx + (tx - fx) * fractional;
       v.curZ = fz + (tz - fz) * fractional;
-      v.group.position.x = v.curX;
-      v.group.position.z = v.curZ;
 
-      // Death — clamp pose + clip
+      // ---- Jump-pad parabolic arc ----
+      // When the cell delta between snaps is > 1, the agent was teleported
+      // by a jump pad in that tick. Render a parabolic Y so they visibly
+      // leap. Peak height scales with jump distance.
+      const cellDx = Math.abs(sNxt.x - sCur.x);
+      const cellDy = Math.abs(sNxt.y - sCur.y);
+      const cellDist = cellDx + cellDy;
+      let arcY = 0;
+      if (cellDist > 1 && sCur.alive && sNxt.alive) {
+        const arcHeight = 0.55 + cellDist * 0.18;
+        // f(t) = 4*h*t*(1-t) — parabola peaking at t=0.5
+        arcY = 4 * arcHeight * fractional * (1 - fractional);
+      }
+
+      // ---- Knockback decay ----
+      // Apply per-frame easing toward zero. ~250ms half-life.
+      v.knockX *= Math.max(0, 1 - dt * 6);
+      v.knockZ *= Math.max(0, 1 - dt * 6);
+
+      v.group.position.x = v.curX + v.knockX;
+      v.group.position.z = v.curZ + v.knockZ;
+      v.group.position.y = arcY;
+
+      // Death — clamp pose + clip + spark burst on the falling tick
       if (!sCur.alive) {
         v.group.position.y = 0;
         if (v.alive) {
-          // freshly killed
+          // freshly killed — death anim + dramatic burst
           playClip(v, "Death 01", 220, false, 1);
+          spawnSparks(v.curX, 0.55, v.curZ, 14, 0xff4d6d, 0.85);
         }
         v.alive = false;
+        v._wasAlive = false;
         v.hpSprite.visible = false;
         if (v.mixer) v.mixer.update(dt);
         return;
       }
       v.alive = true;
-      v.group.position.y = 0;
       v.hpSprite.visible = true;
 
       // Facing — physics-smooth turn
@@ -547,6 +626,20 @@ function createScene3D(container) {
 
       if (justAttacked) v._attackUntilTick = tn + 1;
       if (justHit) v._hitUntilTick = tn;
+
+      // ---- Hit VFX: knockback impulse + spark burst (fire once per hit) ----
+      if (justHit) {
+        const hitMarkerTick = sNxt.lastDamageAt;
+        if (hitMarkerTick !== v._lastHitVfxTick) {
+          v._lastHitVfxTick = hitMarkerTick;
+          // Knockback in the direction the defender was facing (they faced
+          // the attacker before the swing landed, so pushing back = -facing).
+          const impulse = 0.22;
+          v.knockX = -Math.sin(v.facing) * impulse;
+          v.knockZ = -Math.cos(v.facing) * impulse;
+          spawnSparks(v.curX, 0.65, v.curZ, 4, 0xff4d6d, 0.4);
+        }
+      }
 
       const attacking = tn <= v._attackUntilTick;
       const hitting = tn <= v._hitUntilTick;
@@ -574,6 +667,9 @@ function createScene3D(container) {
       if (v.mixer) v.mixer.update(dt);
     });
 
+    // Particle pool (sparks from hits, KOs, etc.)
+    updateParticles(dt);
+
     // Treasure animation
     if (treasureGroup) {
       const { diamond, ring, tlight } = treasureGroup.userData;
@@ -600,6 +696,10 @@ function createScene3D(container) {
     if (floorMesh) disposeNode(floorMesh);
     if (gridHelper) { gridHelper.geometry.dispose(); gridHelper.material.dispose(); }
     if (treasureGroup) disposeNode(treasureGroup);
+    // Particle cleanup
+    particles.forEach((p) => { scene.remove(p.mesh); p.mesh.material.dispose(); });
+    particles.length = 0;
+    sparkGeo.dispose();
     renderer.dispose();
     if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
   }
