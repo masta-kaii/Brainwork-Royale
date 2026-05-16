@@ -285,6 +285,159 @@ const balanceL3 = {
 };
 
 // ============================================================
+// WALK — locomotion toward a visible target cone
+// Same body as Balance, but the brain has two extra inputs telling
+// it where the goal is. Fitness is forward progress capped at the
+// target distance, +bonus on reach.
+// ============================================================
+
+const WALK_ARCH = { inputs: 14, hidden: 20, outputs: 4 };
+
+function _observeWalk(rag, target) {
+  // 12 balance inputs (same shape as the balance observe) + 2 target offsets
+  const base = _observeRagdoll(rag);
+  const t = rag.bodies.torso.translation();
+  // Normalize by 10 m so values stay roughly in [-1, 1]
+  const dx = (target.x - t.x) / 10;
+  const dz = (target.z - t.z) / 10;
+  return [...base, dx, dz];
+}
+
+function _walkFitness(env, tick, alive) {
+  const t = env.rag.bodies.torso.translation();
+  const progress = Math.max(0, Math.min(t.z, env.targetZ));      // capped at target Z
+  const reachedBonus = env.reached ? 3 : 0;
+  const uprightBonus = alive ? 0.5 : 0;
+  return progress + reachedBonus + uprightBonus;
+}
+
+function _walkDone(env) {
+  if (env.rag.torsoTopY() < FALLEN_Y) return true;
+  const t = env.rag.bodies.torso.translation();
+  if (!env.reached) {
+    const dist = Math.hypot(t.x - env.target.x, t.z - env.target.z);
+    if (dist < 0.6) {
+      env.reached = true;       // mark and let the episode keep running briefly so the bonus is recorded
+    }
+  }
+  return false;
+}
+
+function _buildWalk(world, targetZ) {
+  const rag = window.brainEngine.createRagdoll(world);
+  return {
+    rag,
+    targetZ,
+    target: { x: 0, y: 0.1, z: targetZ },
+    reached: false,
+  };
+}
+
+// Static target-cone visual — same for all walk levels, just at different Z
+function _walkPropVisuals(targetZ) {
+  return [
+    { name: "target", geom: { type: "cone", radius: 0.32, height: 0.9 },
+      color: 0x5df2d6, emissive: 0x2a8a7a, static: { x: 0, y: 0.55, z: targetZ } },
+    // A short marker line on the ground so the path is visible
+    { name: "startMarker", geom: { type: "box", size: [0.6, 0.02, 0.06] },
+      color: 0x5df2d6, emissive: 0x2a8a7a, static: { x: 0, y: 0.16, z: 0 } },
+    { name: "endMarker", geom: { type: "box", size: [0.6, 0.02, 0.06] },
+      color: 0xffb84d, emissive: 0x6d4a14, static: { x: 0, y: 0.16, z: targetZ } },
+  ];
+}
+
+const walkL1 = {
+  id: "walk-L1",
+  skillId: "walk",
+  level: 1,
+  name: "Walk · Straight path",
+  arch: WALK_ARCH,
+  theoreticalMax: 3 + 3.5,                   // target z + reach bonus + upright
+  maxTicks: 480,                             // 8 s
+  cameraView: { position: [3.2, 1.8, 1.8], lookAt: [0, 0.9, 1.5] },
+  build: (world) => _buildWalk(world, 3),
+  buildProps: () => ({}),
+  propVisuals: _walkPropVisuals(3),
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: () => {},
+  done: _walkDone,
+  fitness: _walkFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+
+const walkL2 = {
+  id: "walk-L2",
+  skillId: "walk",
+  level: 2,
+  name: "Walk · Path with pendulum",
+  arch: WALK_ARCH,
+  theoreticalMax: 5 + 3.5,
+  maxTicks: 600,                             // 10 s
+  cameraView: { position: [4.0, 2.0, 2.5], lookAt: [0, 0.9, 2.5] },
+  build: (world) => _buildWalk(world, 5),
+  buildProps(world) {
+    // Pendulum hangs over the path at z=2.5 (midway), swings sideways into the bear
+    const p = _makePendulum(world, {
+      anchorX: -1.2, anchorY: 2.6, anchorZ: 2.5,
+      chainLen: 1.1, ballRadius: 0.20, ballMass: 5.0, initialKick: 2.2,
+    });
+    return { pendulumBall: p.ball, pendulumAnchor: p.anchor };
+  },
+  propVisuals: [
+    ..._walkPropVisuals(5),
+    { name: "pendulumBall",   geom: { type: "sphere", radius: 0.20 },         color: 0xff5577, emissive: 0x661c2d },
+    { name: "pendulumAnchor", geom: { type: "box", size: [0.15, 0.10, 0.15] }, color: 0x8b91b8, emissive: 0x2a3155 },
+  ],
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: () => {},
+  done: _walkDone,
+  fitness: _walkFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+
+const walkL3 = {
+  id: "walk-L3",
+  skillId: "walk",
+  level: 3,
+  name: "Walk · Path with two pendulums",
+  arch: WALK_ARCH,
+  theoreticalMax: 7 + 3.5,
+  maxTicks: 720,                             // 12 s
+  cameraView: { position: [4.5, 2.2, 3.5], lookAt: [0, 0.9, 3.5] },
+  build: (world) => _buildWalk(world, 7),
+  buildProps(world) {
+    // Two pendulums along the path at different Z and opposite sides
+    const a = _makePendulum(world, {
+      anchorX: -1.2, anchorY: 2.6, anchorZ: 2.5,
+      chainLen: 1.0, ballRadius: 0.20, ballMass: 5.0, initialKick: 2.4,
+    });
+    const b = _makePendulum(world, {
+      anchorX:  1.3, anchorY: 2.8, anchorZ: 5.0,
+      chainLen: 1.2, ballRadius: 0.22, ballMass: 6.0, initialKick: -2.0,
+    });
+    return {
+      pendulumAball: a.ball, pendulumAanchor: a.anchor,
+      pendulumBball: b.ball, pendulumBanchor: b.anchor,
+    };
+  },
+  propVisuals: [
+    ..._walkPropVisuals(7),
+    { name: "pendulumAball",   geom: { type: "sphere", radius: 0.20 },         color: 0xff5577, emissive: 0x661c2d },
+    { name: "pendulumAanchor", geom: { type: "box", size: [0.15, 0.10, 0.15] }, color: 0x8b91b8, emissive: 0x2a3155 },
+    { name: "pendulumBball",   geom: { type: "sphere", radius: 0.22 },         color: 0xff8b45, emissive: 0x6d3818 },
+    { name: "pendulumBanchor", geom: { type: "box", size: [0.15, 0.10, 0.15] }, color: 0x8b91b8, emissive: 0x2a3155 },
+  ],
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: () => {},
+  done: _walkDone,
+  fitness: _walkFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+
+// ============================================================
 // PLACEHOLDERS — skill envs to build in future rounds
 // ============================================================
 function _placeholder(skillId, level) {
@@ -311,10 +464,10 @@ const ENV_REGISTRY = {
   "balance-L1": balanceL1,
   "balance-L2": balanceL2,
   "balance-L3": balanceL3,
-  // Placeholders so the UI can render "coming soon" without crashing
-  "walk-L1":   _placeholder("walk", 1),
-  "walk-L2":   _placeholder("walk", 2),
-  "walk-L3":   _placeholder("walk", 3),
+  "walk-L1":    walkL1,
+  "walk-L2":    walkL2,
+  "walk-L3":    walkL3,
+  // Placeholders for skills still to ship in future rounds
   "run-L1":    _placeholder("run", 1),
   "run-L2":    _placeholder("run", 2),
   "run-L3":    _placeholder("run", 3),

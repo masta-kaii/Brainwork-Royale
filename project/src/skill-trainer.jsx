@@ -54,6 +54,11 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
     if (env && sceneRef.current?.setPropVisuals) {
       sceneRef.current.setPropVisuals(env.propVisuals || [], env.dynamicPropFactory || null);
     }
+    // Apply per-env camera view if the env requested one (Walk uses a
+    // side angle so the path forward is visible).
+    if (env?.cameraView && sceneRef.current?.setView) {
+      sceneRef.current.setView(env.cameraView);
+    }
 
     // Show a static spawn pose so the arena isn't empty
     try {

@@ -1307,15 +1307,16 @@ function mountRagdollScene(container) {
   // Solid training stage — raised platform + surrounding void floor.
   // The physics ground (in brain-engine.makeWorld) is a big cuboid at
   // y=-0.05; these are the VISIBLE meshes that sell "you're on a stage".
+  // Bigger now so Walk env path (target up to z=+7) fits visibly.
   // ============================================================
-  const PLATFORM_R = 2.5;
+  const PLATFORM_R = 6;
   const PLATFORM_H = 0.15;
 
   // Void floor — large, dark, sits below platform level. Suggests "if
   // you fall off, you go down forever" (visually only; physics ground
   // catches them).
   const voidFloor = new THREE.Mesh(
-    new THREE.CircleGeometry(8, 64),
+    new THREE.CircleGeometry(16, 64),
     new THREE.MeshStandardMaterial({ color: 0x05060c, roughness: 1.0, metalness: 0 })
   );
   voidFloor.rotation.x = -Math.PI / 2;
@@ -1360,6 +1361,7 @@ function mountRagdollScene(container) {
     else if (g.type === "box")      geom = new THREE.BoxGeometry(...(g.size || [0.2, 0.2, 0.2]).map((s) => s * 2));
     else if (g.type === "cylinder") geom = new THREE.CylinderGeometry(g.radius || 0.1, g.radius || 0.1, g.height || 0.4, 16);
     else if (g.type === "capsule")  geom = new THREE.CapsuleGeometry(g.radius || 0.1, (g.halfHeight || 0.2) * 2, 6, 12);
+    else if (g.type === "cone")     geom = new THREE.ConeGeometry(g.radius || 0.2, g.height || 0.6, 16);
     else                            geom = new THREE.SphereGeometry(0.1, 8, 6);
     const mat = new THREE.MeshStandardMaterial({
       color: spec.color != null ? spec.color : 0x9bf0e0,
@@ -1391,7 +1393,15 @@ function mountRagdollScene(container) {
     // Pre-create static props described in propVisuals
     (propVisuals || []).forEach((spec) => {
       const mesh = _makePropMesh(spec);
-      mesh.visible = false; // shows when first snapshot lands
+      if (spec.static) {
+        // Decoration / fixed-position prop — placed once, never updated
+        // by applyPropsSnapshot, visible immediately.
+        mesh.position.set(spec.static.x, spec.static.y, spec.static.z);
+        if (spec.static.rotY) mesh.rotation.y = spec.static.rotY;
+        mesh.visible = true;
+      } else {
+        mesh.visible = false; // shows when first physics snapshot lands
+      }
       scene.add(mesh);
       propRegistry.set(spec.name, { mesh, spec });
     });
@@ -1412,9 +1422,21 @@ function mountRagdollScene(container) {
         entry = { mesh, spec };
         propRegistry.set(name, entry);
       }
+      // Static props are pinned in place — don't overwrite their position
+      if (entry.spec.static) continue;
       entry.mesh.visible = true;
       entry.mesh.position.set(transform.x, transform.y, transform.z);
       entry.mesh.quaternion.set(transform.qx, transform.qy, transform.qz, transform.qw);
+    }
+  }
+
+  function setView(view) {
+    if (!view) return;
+    if (view.position) camera.position.set(view.position[0], view.position[1], view.position[2]);
+    if (view.lookAt) camera.lookAt(view.lookAt[0], view.lookAt[1], view.lookAt[2]);
+    if (controls) {
+      controls.target.set(view.lookAt?.[0] ?? 0, view.lookAt?.[1] ?? 0.9, view.lookAt?.[2] ?? 0);
+      controls.update();
     }
   }
 
@@ -1582,7 +1604,7 @@ function mountRagdollScene(container) {
 
   return {
     applySnapshot, setFallen, flashCue, renderFrame, dispose,
-    setPropVisuals, applyPropsSnapshot, disposeProps,
+    setPropVisuals, applyPropsSnapshot, disposeProps, setView,
     get controls() { return controls; },
   };
 }
