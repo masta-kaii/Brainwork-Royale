@@ -62,12 +62,12 @@ import {
 // (Firebase Console -> Project Settings -> Your apps -> SDK setup)
 // ============================================================
 const FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyCy3hUOoZMM0ScjwOb2rh_znmvcJ8dHLmo",
+  authDomain: "brainwork-royale.firebaseapp.com",
+  projectId: "brainwork-royale",
+  storageBucket: "brainwork-royale.firebasestorage.app",
+  messagingSenderId: "1019544776261",
+  appId: "1:1019544776261:web:3425ae93b21b1138eebd2c"
   // measurementId: "G-XXXXXXXXXX", // optional, only if you enable Analytics
 };
 
