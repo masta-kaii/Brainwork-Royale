@@ -49,14 +49,24 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
     if (!stageRef.current || !ready || failed || isPlaceholder) return;
     sceneRef.current = window.mountRagdollScene(stageRef.current);
 
+    // Register the env's static prop visuals + dynamic factory so the
+    // renderer can mirror pendulums, debris, etc. each frame.
+    if (env && sceneRef.current?.setPropVisuals) {
+      sceneRef.current.setPropVisuals(env.propVisuals || [], env.dynamicPropFactory || null);
+    }
+
     // Show a static spawn pose so the arena isn't empty
     try {
       if (env && env.build) {
         const previewWorld = window.brainEngine.makeWorld();
         const envState = env.build(previewWorld);
+        if (env.buildProps) envState.props = env.buildProps(previewWorld);
         previewWorld.step();
         const snap = env.snapshot(envState);
         sceneRef.current.applySnapshot(snap.bodies || snap);
+        if (snap.props && sceneRef.current.applyPropsSnapshot) {
+          sceneRef.current.applyPropsSnapshot(snap.props);
+        }
         if (envState.rag) window.brainEngine.destroyRagdoll(previewWorld, envState.rag);
         previewWorld.free?.();
       }
@@ -80,7 +90,11 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
           pb.idx = Math.min(target, pb.trace.length - 1);
           const frame = pb.trace[pb.idx];
           sceneRef.current?.applySnapshot(frame.bodies || frame);
-          // Cue visualisation: when a perturbation push fires, briefly flash an arrow
+          // Mirror physical props (pendulums, debris, etc.)
+          if (frame?.props && sceneRef.current?.applyPropsSnapshot) {
+            sceneRef.current.applyPropsSnapshot(frame.props);
+          }
+          // Legacy cue visualisation — kept for any envs that still use it
           if (frame?.cue && sceneRef.current?.flashCue) {
             sceneRef.current.flashCue(frame.cue);
           }
@@ -244,6 +258,10 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
           <div className="training-hud__tag">
             GEN {stats.gen}
           </div>
+        </div>
+        {/* Physics indicator pinned bottom-right */}
+        <div className="training-physics-tag">
+          g = 9.81 m/s² ↓
         </div>
 
         {session && (
