@@ -74,6 +74,9 @@
   <!-- Firebase SDK (modular v11, ESM). Loads before JSX so window.firebase is ready. -->
   <script type="module" src="src/firebase.js"></script>
 
+  <!-- Data layer (Firestore wrapper) — must come before any JSX that uses dataLayer.* -->
+  <script type="text/babel" src="src/firestore-state.js"></script>
+
   <!-- Components -->
   <script type="text/babel" src="src/bears.jsx"></script>
   <script type="text/babel" src="src/ui.jsx"></script>

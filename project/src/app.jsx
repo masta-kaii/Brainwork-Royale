@@ -4,36 +4,6 @@
 
 const { useState, useEffect, useRef, useMemo } = React;
 
-const DEFAULT_PLAYER = {
-  rank: "PLATINUM III",
-  coins: 4820,
-  gems: 24,
-};
-
-const INITIAL_AI = {
-  name: "ALBRT-7",
-  class: "engineer",
-  tier: "Platinum",
-  generation: 247,
-  trainingQueue: 12,
-  stats: { speed: 62, stamina: 71, intelligence: 88, strength: 54 },
-};
-
-const INITIAL_DAILY_QUESTS = [
-  { id: "q1", kind: "quiz", kindLabel: "Linear algebra · Quiz",
-    glyph: "Σ", title: "Solve 10 algebra problems",
-    progress: 6, target: 10, unit: "solved", reward: 8, rewardLabel: "INT" },
-  { id: "q2", kind: "body", kindLabel: "Steps · Strava",
-    glyph: "↑", title: "Walk 8,000 steps today",
-    progress: 5200, target: 8000, unit: "steps", reward: 6, rewardLabel: "STA" },
-  { id: "q3", kind: "mind", kindLabel: "Focus · 25 min Pomodoro",
-    glyph: "◷", title: "One focus session",
-    progress: 0, target: 1, unit: "session", reward: 12, rewardLabel: "gens" },
-  { id: "q4", kind: "game", kindLabel: "In-game · Daily challenge",
-    glyph: "✶", title: "Win 3 matches today",
-    progress: 1, target: 3, unit: "wins", reward: 240, rewardLabel: "coins" },
-];
-
 // Pre-build a few replays so Replays tab isn't empty on first load
 function buildSeedReplays(ai) {
   const seeds = [13371, 92024, 4815];
@@ -50,15 +20,26 @@ function buildSeedReplays(ai) {
   });
 }
 
-function App({ user }) {
+function App({ user, initialState }) {
+  const uid = user.uid;
   const [tab, setTab] = useState("home");
-  const [player] = useState(() => ({
-    ...DEFAULT_PLAYER,
-    uid: user.uid,
+  const [profile, setProfile] = useState(initialState.profile);
+  const [ai, setAi] = useState(initialState.character);
+  const [quests, setQuests] = useState(initialState.quests);
+  const [toast, setToast] = useState(null);
+  const [battleSeed, setBattleSeed] = useState(8201);
+  const [replays, setReplays] = useState(() => buildSeedReplays(initialState.character));
+  const [classModal, setClassModal] = useState(false);
+
+  // Composite "player" object used by HomeScreen + rail
+  const player = useMemo(() => ({
+    uid,
     email: user.email,
-    handle: user.displayName || (user.email ? user.email.split("@")[0] : "warden"),
-  }));
-  const [ai, setAi] = useState(INITIAL_AI);
+    handle: profile.displayName || user.displayName || (user.email ? user.email.split("@")[0] : "warden"),
+    rank: profile.currency.rank,
+    coins: profile.currency.coins,
+    gems: profile.currency.gems,
+  }), [uid, user, profile]);
 
   // Redirect to landing if signed out from another tab
   useEffect(() => {
@@ -71,12 +52,28 @@ function App({ user }) {
     try { await window.firebase.signOut(); } catch (e) { /* listener handles redirect */ }
     location.replace("/");
   };
-  const [quests, setQuests] = useState(INITIAL_DAILY_QUESTS);
-  const [toast, setToast] = useState(null);
-  const [battleSeed, setBattleSeed] = useState(8201);
-  const [replays, setReplays] = useState(() => buildSeedReplays(INITIAL_AI));
 
   const showToast = (msg) => setToast(msg);
+
+  // Apply any class the user picked on the landing page before signing in
+  useEffect(() => {
+    const pending = localStorage.getItem("pendingClass");
+    if (pending && window.CLASSES && window.CLASSES[pending] && pending !== ai.class) {
+      localStorage.removeItem("pendingClass");
+      changeClass(pending, /*silent=*/ true);
+    } else if (pending) {
+      localStorage.removeItem("pendingClass");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const changeClass = (classId, silent) => {
+    setAi((a) => ({ ...a, class: classId }));
+    setProfile((p) => ({ ...p, currentClass: classId }));
+    window.dataLayer?.setPlayerClass(uid, classId);
+    if (!silent) showToast(`Switched to ${window.CLASSES?.[classId]?.name || classId}`);
+    setClassModal(false);
+  };
 
   const completeQuest = (q) => {
     if (q.kind === "quiz") {
@@ -84,18 +81,29 @@ function App({ user }) {
       window.dispatchEvent(new CustomEvent("open-quiz", { detail: q }));
       return;
     }
+    const newProgress = Math.min(q.target, q.progress + Math.ceil(q.target * 0.25));
     setQuests((qs) =>
-      qs.map((qq) =>
-        qq.id === q.id ? { ...qq, progress: Math.min(qq.target, qq.progress + Math.ceil(qq.target * 0.25)) } : qq
-      )
+      qs.map((qq) => (qq.id === q.id ? { ...qq, progress: newProgress } : qq))
     );
+    window.dataLayer?.updateQuestProgress(uid, q.id, newProgress, q.target);
+
+    // Coins quests pay out in coins on each tick — credit the user
+    if (q.rewardLabel === "coins") {
+      const newCoins = profile.currency.coins + q.reward;
+      setProfile((p) => ({ ...p, currency: { ...p.currency, coins: newCoins } }));
+      window.dataLayer?.saveCurrency(uid, { coins: newCoins });
+    }
     showToast(`+${q.reward} ${q.rewardLabel} earned`);
   };
 
   const onQuestRewarded = (q) => {
     const map = { INT: "intelligence", STA: "stamina", SPD: "speed", STR: "strength" };
     const stat = map[q.rewardLabel];
-    setAi((a) => stat ? ({ ...a, stats: { ...a.stats, [stat]: Math.min(100, a.stats[stat] + Math.floor(q.reward / 2)) } }) : a);
+    if (!stat) return;
+    const newStats = { ...ai.stats, [stat]: Math.min(100, ai.stats[stat] + Math.floor(q.reward / 2)) };
+    setAi((a) => ({ ...a, stats: newStats }));
+    window.dataLayer?.saveCharacterStats(uid, newStats);
+    window.dataLayer?.markQuestRewardClaimed(uid, q.id);
     showToast(`+${q.reward} ${q.rewardLabel} → ${ai.name}`);
   };
 
@@ -142,7 +150,9 @@ function App({ user }) {
           ))}
 
           <div className="rail__nav-label">Meta</div>
-          <div className="rail-item"><span className="rail-item__dot" />Shop</div>
+          <div className="rail-item" onClick={() => setClassModal(true)}>
+            <span className="rail-item__dot" />Change class
+          </div>
           <div className="rail-item"><span className="rail-item__dot" />Leaderboard</div>
           <div className="rail-item" onClick={signOut} title={`Sign out ${player.email || ''}`}>
             <span className="rail-item__dot" />Sign out
@@ -218,6 +228,57 @@ function App({ user }) {
       </nav>
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+
+      {classModal && (
+        <ClassPickerModal
+          activeClass={ai.class}
+          onPick={(id) => changeClass(id, false)}
+          onClose={() => setClassModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ClassPickerModal({ activeClass, onPick, onClose }) {
+  const list = window.CLASS_LIST || Object.values(window.CLASSES || {});
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div
+        className="class-picker"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="class-picker__head">
+          <div>
+            <div className="mono tiny" style={{ color: "var(--mint)", letterSpacing: "0.2em" }}>
+              CHOOSE YOUR AVATAR CLASS
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "var(--font-display)", color: "var(--ink-0)" }}>
+              Pick a bear
+            </div>
+          </div>
+          <button className="overlay__close" style={{ position: "static", width: 32, height: 32 }} onClick={onClose}>×</button>
+        </div>
+        <div className="class-picker__grid">
+          {list.map((c) => (
+            <div
+              key={c.id}
+              className={`class-picker__card ${activeClass === c.id ? "is-active" : ""}`}
+              onClick={() => onPick(c.id)}
+            >
+              <div style={{ width: 64, margin: "0 auto 6px" }}>
+                <BearPortrait cls={c.id} />
+              </div>
+              <div className="class-picker__name">{c.name.replace(" Bear", "")}</div>
+              <div className="mono tiny" style={{ color: "var(--ink-3)", letterSpacing: "0.1em" }}>{c.role.toUpperCase()}</div>
+              <div className="mono tiny" style={{ color: "var(--ink-2)", marginTop: 6, lineHeight: 1.4 }}>{c.ability}</div>
+              {activeClass === c.id && (
+                <div className="mono tiny" style={{ color: "var(--mint)", marginTop: 6, letterSpacing: "0.2em" }}>● ACTIVE</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -227,11 +288,11 @@ function setBootStatus(msg) {
   if (el) el.textContent = msg;
 }
 
-function mountApp(user) {
+function mountApp(user, initialState) {
   const rootEl = document.getElementById("root");
   while (rootEl.firstChild) rootEl.removeChild(rootEl.firstChild);
   const root = ReactDOM.createRoot(rootEl);
-  root.render(<App user={user} />);
+  root.render(<App user={user} initialState={initialState} />);
 }
 
 async function ensureUserDoc(user) {
@@ -247,10 +308,24 @@ async function ensureUserDoc(user) {
       createdAt: serverTimestamp(),
     });
   } catch (e) {
-    // Rules can reject in test mode or before deploy — render the app anyway,
-    // it just means Firestore-backed features will fail until rules are live.
     console.warn("ensureUserDoc failed", e);
   }
+}
+
+// Fallback state if Firestore is unreachable / rules block us — the UI
+// still renders so the user isn't stuck on the boot screen forever.
+function offlineFallbackState(user) {
+  const dl = window.dataLayer;
+  return {
+    profile: {
+      currency: { ...(dl ? dl.DEFAULT_CURRENCY : { coins: 0, gems: 0, rank: "BRONZE I" }) },
+      currentClass: "engineer",
+      displayName: user.displayName || (user.email || "").split("@")[0] || "warden",
+      email: user.email || "",
+    },
+    character: dl ? { ...dl.DEFAULT_CHARACTER } : { name: "ALBRT-7", class: "engineer", tier: "Bronze", generation: 1, trainingQueue: 0, stats: { speed: 50, stamina: 50, intelligence: 50, strength: 50 } },
+    quests: dl ? dl.DEFAULT_QUESTS.map((q) => ({ ...q, status: "active", rewardClaimed: false })) : [],
+  };
 }
 
 function boot() {
@@ -268,7 +343,21 @@ function boot() {
     }
     setBootStatus("SYNCING PROFILE…");
     await ensureUserDoc(user);
-    mountApp(user);
+
+    let initialState;
+    try {
+      if (window.dataLayer) {
+        await window.dataLayer.seedFirstTimeUser(user.uid);
+        setBootStatus("LOADING WARDEN DATA…");
+        initialState = await window.dataLayer.loadPlayerState(user.uid);
+      } else {
+        initialState = offlineFallbackState(user);
+      }
+    } catch (e) {
+      console.warn("loadPlayerState failed, using fallback", e);
+      initialState = offlineFallbackState(user);
+    }
+    mountApp(user, initialState);
   });
 }
 

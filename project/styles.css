@@ -1333,3 +1333,57 @@ body {
 @media (max-width: 760px) {
   .toast { bottom: 80px; right: 16px; left: 16px; }
 }
+
+/* ===== CLASS PICKER MODAL ===== */
+.class-picker {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  padding: 24px;
+  max-width: 760px;
+  width: 100%;
+  max-height: 86vh;
+  overflow-y: auto;
+  animation: pop 200ms cubic-bezier(.2, .8, .3, 1.2);
+}
+.class-picker__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+.class-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.class-picker__card {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 14px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 140ms, transform 140ms, background 140ms;
+}
+.class-picker__card:hover {
+  border-color: var(--mint);
+  transform: translateY(-2px);
+  background: var(--bg-3);
+}
+.class-picker__card.is-active {
+  border-color: var(--mint);
+  box-shadow: 0 0 0 1px var(--mint), 0 0 22px -8px var(--mint-glow);
+  background: oklch(0.85 0.15 175 / 0.06);
+}
+.class-picker__name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink-0);
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+@media (max-width: 760px) {
+  .class-picker__grid { grid-template-columns: repeat(2, 1fr); }
+}

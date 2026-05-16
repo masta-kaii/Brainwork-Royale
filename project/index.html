@@ -588,6 +588,23 @@
       transition: transform 120ms, border-color 120ms;
     }
     .class-card:hover { transform: translateY(-2px); border-color: var(--line); }
+    .class-card.is-active {
+      border-color: var(--mint);
+      box-shadow: 0 0 0 1px var(--mint), 0 0 22px -8px var(--mint-glow);
+      background: oklch(0.85 0.15 175 / 0.06);
+    }
+    .class-card.is-active::after {
+      content: 'PICKED';
+      position: absolute;
+      top: 8px; right: 8px;
+      font-family: var(--font-display);
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      color: var(--mint);
+      background: oklch(0 0 0 / 0.5);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
     .class-card__tag {
       position: absolute; top: 10px; right: 10px;
       font-family: var(--font-display); font-size: 9px;
@@ -1622,20 +1639,25 @@ CLASS_INFO.forEach(c => {
     </div>
   `;
   card.addEventListener('click', () => {
+    // Stash the class pick so the game can apply it after sign-in
+    try { localStorage.setItem('pendingClass', c.id); } catch (e) {}
+    // Update the "active" highlight across all cards
+    [...classGrid.children].forEach((el) => el.classList.toggle('is-active', el === card));
+    showToast(`${c.name} locked in · sign in to deploy`);
+
     // Play a class-matching anim in the viewer
     const map = { engineer: 'Interact 01', polar: 'Idle Combat 01', angel: 'Heavy Attack 01', rainbow: 'Dodge 01', helmet: 'Salute 01' };
     if (currentClipName && actions[map[c.id]]) {
-      // Switch category to that anim's group
       const cat = classifyAnim(map[c.id]);
       currentCat = cat;
       [...animCats.children].forEach(b => b.classList.toggle('is-on', b.dataset.cat === cat));
       renderAnimList(Object.keys(actions));
       playAnim(map[c.id]);
-      stage.scrollIntoView ? null : null; // intentionally not using; would mess viewport
-      // Smooth scroll to viewer
       document.getElementById('viewer').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
+  // Reflect a previously-stashed pick on page load
+  try { if (localStorage.getItem('pendingClass') === c.id) card.classList.add('is-active'); } catch (e) {}
   classGrid.appendChild(card);
 });
 
