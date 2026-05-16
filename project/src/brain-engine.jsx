@@ -197,75 +197,17 @@ function destroyRagdoll(world, rag) {
 }
 
 // ============================================================
-// Episode runner — drives one brain against one ragdoll for up to
-// MAX_TICKS physics steps; returns fitness (time alive) + trace.
+// Episode runner — generalized: takes any env spec from the
+// training-envs registry. The old evalBalance() wraps this.
 // ============================================================
 const PHYS_DT   = 1 / 60;
-const MAX_TICKS = 300;                          // 5 seconds
-const FALLEN_Y  = 0.55;                         // torso-top below this → fallen
-const TORQUE_SCALE = 4.5;                       // ±1 NN output → ±4.5 Nm
+const TRACE_EVERY = 3;
 
-function _obs(rag) {
-  const torso = rag.bodies.torso;
-  const rot = torso.rotation();                 // quaternion { x, y, z, w }
-  // Convert quat to pitch / roll (ignore yaw)
-  const sinr_cosp = 2 * (rot.w * rot.x + rot.y * rot.z);
-  const cosr_cosp = 1 - 2 * (rot.x * rot.x + rot.y * rot.y);
-  const roll = Math.atan2(sinr_cosp, cosr_cosp);
-  const sinp = 2 * (rot.w * rot.y - rot.z * rot.x);
-  const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp);
-  const torsoAng = torso.angvel();              // { x, y, z }
-
-  const ja = (j) => j.angle ? j.angle() : 0;
-  const jv = (j, b1, b2) => {                   // joint angular velocity ≈ diff
-    const a1 = b1.angvel().x, a2 = b2.angvel().x;
-    return a2 - a1;
-  };
-
-  return [
-    pitch, roll,
-    ja(rag.joints.lHip), ja(rag.joints.rHip),
-    ja(rag.joints.lKnee), ja(rag.joints.rKnee),
-    jv(rag.joints.lHip,  rag.bodies.torso,  rag.bodies.lThigh),
-    jv(rag.joints.rHip,  rag.bodies.torso,  rag.bodies.rThigh),
-    jv(rag.joints.lKnee, rag.bodies.lThigh, rag.bodies.lShin),
-    jv(rag.joints.rKnee, rag.bodies.rThigh, rag.bodies.rShin),
-    torsoAng.x, torsoAng.z,
-  ];
-}
-
-function _applyTorques(rag, out) {
-  // out: [-1..1] × 4 → torque on hips + knees
-  const RAPIER = window.RAPIER;
-  const apply = (joint, body, sign, t) => {
-    // Rapier doesn't expose direct joint torque on revolute, but we can
-    // apply a torque impulse to the connected bodies around the joint axis.
-    const T = sign * t * TORQUE_SCALE;
-    body.applyTorqueImpulse({ x: T * PHYS_DT, y: 0, z: 0 }, true);
-  };
-  apply(rag.joints.lHip,  rag.bodies.lThigh,  +1, out[0]);
-  apply(rag.joints.rHip,  rag.bodies.rThigh,  +1, out[1]);
-  apply(rag.joints.lKnee, rag.bodies.lShin,   +1, out[2]);
-  apply(rag.joints.rKnee, rag.bodies.rShin,   +1, out[3]);
-}
-
-// Snapshot the bodies' transforms so the renderer can mirror them.
-function _snapshot(rag) {
-  const snap = {};
-  for (const [name, b] of Object.entries(rag.bodies)) {
-    const t = b.translation(), r = b.rotation();
-    snap[name] = { x: t.x, y: t.y, z: t.z, qx: r.x, qy: r.y, qz: r.z, qw: r.w };
-  }
-  return snap;
-}
-
-// Build a fresh world (or reuse a passed one). Returns helpers; caller
-// is responsible for stepping if they want continuous physics outside an
-// episode.
+// Build a fresh physics world with a static ground plane.
+// Envs build everything else (ragdoll, platforms, targets, projectiles).
 function makeWorld() {
   const RAPIER = window.RAPIER;
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-  // Static ground
   const groundDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.05, 0);
   const ground = world.createRigidBody(groundDesc);
   const groundCol = RAPIER.ColliderDesc.cuboid(20, 0.05, 20).setFriction(0.95);
@@ -273,49 +215,67 @@ function makeWorld() {
   return world;
 }
 
-// Run one balance episode. Returns { fitness, trace } where trace is
-// an array of snapshots (one every TRACE_EVERY ticks) for the renderer.
-const TRACE_EVERY = 3;
-function evalBalance(brain, opts = {}) {
+function evalEnv(env, brain, opts = {}) {
   const { worldFactory = makeWorld, recordTrace = false } = opts;
   const world = worldFactory();
-  const rag = createRagdoll(world);
-  const trace = recordTrace ? [_snapshot(rag)] : null;
+  const envState = env.build(world);
+  const trace = recordTrace ? [env.snapshot(envState)] : null;
   let ticks = 0;
   let alive = true;
 
-  while (ticks < MAX_TICKS && alive) {
-    const obs = _obs(rag);
+  while (ticks < env.maxTicks && alive) {
+    // 1. env-specific perturbation / scripted events
+    env.envStep(envState, ticks);
+    // 2. observe
+    const obs = env.observe(envState);
+    // 3. NN forward
     const out = forward(brain, obs);
-    _applyTorques(rag, out);
+    // 4. apply actions to bodies
+    env.act(envState, out);
+    // 5. physics step
     world.step();
     ticks++;
-    if (recordTrace && ticks % TRACE_EVERY === 0) trace.push(_snapshot(rag));
-    // Failure condition: torso top fell below threshold OR torso below ground
-    if (rag.torsoTopY() < FALLEN_Y) alive = false;
+    if (recordTrace && ticks % TRACE_EVERY === 0) trace.push(env.snapshot(envState));
+    // 6. termination check
+    if (env.done(envState, ticks)) alive = false;
   }
 
-  // Dispose
-  destroyRagdoll(world, rag);
+  // Dispose physics bodies (best-effort — Rapier reclaims when world is freed)
+  if (envState.rag) destroyRagdoll(world, envState.rag);
   world.free?.();
 
-  // Fitness = seconds upright. Bonus for staying near vertical.
-  const fitness = ticks * PHYS_DT;
+  const fitness = env.fitness(envState, ticks, alive);
   return { fitness, ticks, trace };
+}
+
+// Backwards-compat wrapper so any caller still using evalBalance keeps working.
+function evalBalance(brain, opts = {}) {
+  const env = window.trainingEnvs?.getEnv?.("balance", 1);
+  if (!env) throw new Error("training-envs not loaded");
+  return evalEnv(env, brain, opts);
 }
 
 // ============================================================
 // Trainer — sequential evaluation, elitist GA, callbacks for UI.
+// Now env-driven: caller passes the training env spec.
 // ============================================================
 function startTrainer({
-  arch = DEFAULT_ARCH,
+  env,                       // env spec from training-envs.getEnv(skill, level)
   population = 16,
   seedBrain = null,
-  onGenerationDone = null, // ({ gen, bestFitness, avgFitness, bestBrain, bestTrace }) => void
+  onGenerationDone = null,   // ({ gen, bestFitness, avgFitness, bestBrain, bestTrace, env }) => void
 }) {
-  // Initialise population
+  if (!env) throw new Error("startTrainer requires { env }");
+  const arch = env.arch || DEFAULT_ARCH;
+
+  // Initialise population. If we have a seed brain compatible with the env's
+  // arch, use it; otherwise discard (different inputs/outputs) and start fresh.
+  const seedCompatible = seedBrain
+    && seedBrain.arch.inputs === arch.inputs
+    && seedBrain.arch.outputs === arch.outputs;
+
   let pop = [];
-  if (seedBrain) {
+  if (seedCompatible) {
     pop.push({ brain: cloneBrain(seedBrain), fitness: 0 });
     for (let i = 1; i < population; i++) {
       pop.push({ brain: mutate(seedBrain), fitness: 0 });
@@ -331,33 +291,31 @@ function startTrainer({
   async function runOneGeneration() {
     if (stopped) return null;
     gen++;
-    // Evaluate
     let bestIdx = 0;
     for (let i = 0; i < pop.length; i++) {
       if (stopped) return null;
-      const recordTrace = (i === 0); // record only one trace; we'll re-eval best after
-      const res = evalBalance(pop[i].brain, { recordTrace });
+      const res = evalEnv(env, pop[i].brain, { recordTrace: false });
       pop[i].fitness = res.fitness;
       if (pop[i].fitness > pop[bestIdx].fitness) bestIdx = i;
-      // Yield to UI between evaluations so we don't lock the main thread
+      // Yield to the UI between evaluations
       await new Promise((r) => setTimeout(r, 0));
     }
-    // Re-eval BEST with trace recording (so we visualize the actual winner)
-    const bestRes = evalBalance(pop[bestIdx].brain, { recordTrace: true });
+    // Re-eval BEST with trace recording so we can visualize the winner
+    const bestRes = evalEnv(env, pop[bestIdx].brain, { recordTrace: true });
     pop[bestIdx].fitness = bestRes.fitness;
 
     const bestFitness = pop[bestIdx].fitness;
     const avgFitness = pop.reduce((s, p) => s + p.fitness, 0) / pop.length;
     const bestBrain = cloneBrain(pop[bestIdx].brain);
 
-    onGenerationDone?.({ gen, bestFitness, avgFitness, bestBrain, bestTrace: bestRes.trace });
+    onGenerationDone?.({ gen, bestFitness, avgFitness, bestBrain, bestTrace: bestRes.trace, env });
 
-    // Breed next generation: keep top 4 elite, fill rest with mutated copies of top 2
+    // Breed: keep top 4 elite, rest are mutated copies of top 2
     pop.sort((a, b) => b.fitness - a.fitness);
     const elite = pop.slice(0, 4).map((p) => ({ brain: cloneBrain(p.brain), fitness: 0 }));
     const next = [...elite];
     for (let i = elite.length; i < pop.length; i++) {
-      const parent = pop[Math.floor(Math.random() * 2)].brain; // top-2 selection
+      const parent = pop[Math.floor(Math.random() * 2)].brain;
       next.push({ brain: mutate(parent, { rate: 0.18, sigma: 0.45 }), fitness: 0 });
     }
     pop = next;
@@ -380,7 +338,7 @@ window.brainEngine = {
   // Physics
   isReady, makeWorld, createRagdoll, destroyRagdoll,
   // Episode + training
-  evalBalance, startTrainer,
+  evalEnv, evalBalance, startTrainer,
   // Constants exposed for the renderer
-  PHYS_DT, MAX_TICKS,
+  PHYS_DT, TRACE_EVERY,
 };

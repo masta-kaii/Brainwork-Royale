@@ -1373,11 +1373,44 @@ function mountRagdollScene(container) {
     if (!fallen) fallenSince = 0;
   }
 
-  // Stage tag overlays
+  // Transient perturbation-cue marker (arrow that briefly appears at the
+  // side that just pushed the ragdoll). Reused for both L2 and L3 envs.
+  const cueGeo = new THREE.ConeGeometry(0.08, 0.22, 6);
+  const cueMat = new THREE.MeshStandardMaterial({
+    color: 0xff4d6d, emissive: 0xff2a4a, emissiveIntensity: 1.4,
+    transparent: true, opacity: 0,
+  });
+  const cueMesh = new THREE.Mesh(cueGeo, cueMat);
+  cueMesh.position.set(0, 1.0, 0);
+  cueMesh.rotation.z = Math.PI / 2;
+  scene.add(cueMesh);
+  let cueExpiresAt = 0;
+
+  function flashCue(cue) {
+    if (!cue) return;
+    // Place the arrow on the side the impulse came from, pointing inward
+    if (cue.kind === "push") {
+      cueMesh.position.set(cue.sign * 0.9, 1.0, 0);
+      cueMesh.rotation.set(0, 0, cue.sign > 0 ? Math.PI / 2 : -Math.PI / 2);
+    } else if (cue.kind === "push3d") {
+      cueMesh.position.set(Math.cos(cue.theta) * 0.9, 1.0, Math.sin(cue.theta) * 0.9);
+      cueMesh.lookAt(0, 1.0, 0);
+      cueMesh.rotateX(Math.PI / 2);
+    }
+    cueExpiresAt = performance.now() + 240;
+    cueMat.opacity = 0.95;
+  }
+
   let elapsed = 0;
   function renderFrame(dt) {
     elapsed += dt;
     accent.intensity = 1.0 + Math.sin(elapsed * 2.4) * 0.3;
+    // Cue fade
+    if (cueExpiresAt) {
+      const remaining = (cueExpiresAt - performance.now()) / 240;
+      if (remaining <= 0) { cueMat.opacity = 0; cueExpiresAt = 0; }
+      else cueMat.opacity = Math.max(0, remaining * 0.95);
+    }
     if (controls) controls.update();
     renderer.render(scene, camera);
   }
@@ -1397,7 +1430,7 @@ function mountRagdollScene(container) {
   }
 
   return {
-    applySnapshot, setFallen, renderFrame, dispose,
+    applySnapshot, setFallen, flashCue, renderFrame, dispose,
     get controls() { return controls; },
   };
 }
