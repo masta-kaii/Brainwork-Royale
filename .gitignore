@@ -1,0 +1,56 @@
+# ---- OS / editor junk ----
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+.history/
+
+# ---- Node / package managers ----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnp.*
+
+# ---- Build output / caches ----
+dist/
+build/
+out/
+.cache/
+.parcel-cache/
+.next/
+.turbo/
+.vercel/
+
+# ---- Environment / secrets (NEVER commit) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+
+# ---- Firebase admin credentials (REAL secrets) ----
+# Service-account / admin-SDK keys grant full backend access.
+# Anyone with this file owns your Firestore + Auth.
+serviceAccountKey.json
+firebase-adminsdk-*.json
+google-services.json
+GoogleService-Info.plist
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# ---- Note on Firebase web config ----
+# The web config in project/src/firebase.js (apiKey, authDomain, projectId,
+# etc.) is NOT secret. Firebase ships it inside every client app. Anyone
+# can read it via DevTools. Real security comes from Firestore Security
+# Rules + Auth restrictions, not from hiding these values.
+#
+# If you still want to keep your filled-in config off git anyway,
+# uncomment the line below and use firebase.example.js as the template:
+# project/src/firebase.js
