@@ -25,7 +25,18 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
   const [, force] = React.useReducer((x) => x + 1, 0);
   const [winner, setWinner] = React.useState(null);
   const [elapsedSec, setElapsedSec] = React.useState(0);
+  const [hintFaded, setHintFaded] = React.useState(false);
   const completedRef = React.useRef(false);
+
+  const resetCamera = React.useCallback(() => {
+    sceneRef.current?.resetCamera();
+  }, []);
+
+  React.useEffect(() => {
+    setHintFaded(false);
+    const id = setTimeout(() => setHintFaded(true), 4500);
+    return () => clearTimeout(id);
+  }, [seed]);
 
   // Build sim + scene on mount / seed change
   React.useEffect(() => {
@@ -148,7 +159,21 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
       <div className="page-body">
         <div className="battle-wrap">
           <div className="battle-stage battle-stage--3d">
-            <div ref={stageRef} className="three-mount" />
+            <div
+              ref={stageRef}
+              className="three-mount"
+              onDoubleClick={resetCamera}
+            />
+
+            <button
+              className="cam-ctl"
+              onClick={resetCamera}
+              title="Reset view"
+              aria-label="Reset view"
+            >↺</button>
+            <div className={`cam-hint ${hintFaded ? "is-faded" : ""}`}>
+              <kbd>DRAG</kbd> rotate · <kbd>SCROLL</kbd> zoom · <kbd>DBL-CLK</kbd> reset
+            </div>
 
             {/* Top HUD strip */}
             <div className="battle-hud">

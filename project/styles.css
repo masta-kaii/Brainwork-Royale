@@ -1021,8 +1021,58 @@ body {
   height: 100%;
   overflow: hidden;
   border-radius: var(--r-lg);
+  cursor: grab;
 }
+.three-mount:active { cursor: grabbing; }
 .three-mount canvas { display: block; }
+
+/* ===== 3D camera affordances (rotate / zoom / reset) ===== */
+.cam-ctl {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 5;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: oklch(0 0 0 / 0.6);
+  backdrop-filter: blur(6px);
+  color: var(--ink-1);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1;
+  transition: color 120ms, background 120ms, transform 240ms;
+}
+.cam-ctl:hover { color: var(--mint); background: oklch(0 0 0 / 0.8); }
+.cam-ctl:active { transform: rotate(-90deg); }
+
+.cam-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 5;
+  pointer-events: none;
+  background: oklch(0 0 0 / 0.6);
+  border: 1px solid var(--line-soft);
+  backdrop-filter: blur(6px);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+  transition: opacity 600ms ease;
+}
+.cam-hint kbd {
+  font-family: inherit;
+  color: var(--mint);
+  background: transparent;
+  padding: 0 2px;
+}
+.cam-hint.is-faded { opacity: 0; }
 
 .live-ticker {
   position: absolute;
