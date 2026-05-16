@@ -5,6 +5,15 @@
    (run once + snapshot every tick).
    ============================================================ */
 
+// Obstacle catalog — placed on otherwise-walkable cells. Replay
+// reads these straight off maze.obstacles so format is unchanged.
+const OBSTACLE_TYPES = {
+  SPIKE:  "spike",   // -8 hp on entry (cooldown per agent)
+  SPEED:  "speed",   // boost: half move cooldown for N ticks
+  SLOW:   "slow",    // 2x move cooldown for N ticks
+  JUMP:   "jump",    // skip cells in facing dir; Jump skill = farther
+};
+
 // ---------- Maze generation (recursive backtracker) ----------
 function genMaze(cols, rows, seed) {
   const grid = Array.from({ length: rows }, () => Array(cols).fill(1));
@@ -60,7 +69,43 @@ function genMaze(cols, rows, seed) {
     const y = 1 + Math.floor(rand() * (rows - 2));
     if (grid[y][x] === 1) grid[y][x] = 0;
   }
-  return { grid, cols, rows, treasure: [ccx, ccy] };
+
+  // ---- Obstacles ----
+  // Initialize a parallel grid; null = nothing on this cell.
+  const obstacles = Array.from({ length: rows }, () => Array(cols).fill(null));
+
+  // Eligible cells: open floor, not the treasure plaza, not the
+  // 4 corner-ish spawn cells (avoid spawn-kill).
+  const isPlazaOrSpawn = (x, y) => {
+    if (Math.abs(x - ccx) <= 2 && Math.abs(y - ccy) <= 2) return true;
+    const corners = [[1, 1], [cols - 2, 1], [1, rows - 2], [cols - 2, rows - 2]];
+    return corners.some(([sx, sy]) => Math.abs(x - sx) + Math.abs(y - sy) <= 1);
+  };
+
+  const openCells = [];
+  for (let y = 1; y < rows - 1; y++) {
+    for (let x = 1; x < cols - 1; x++) {
+      if (grid[y][x] === 0 && !isPlazaOrSpawn(x, y)) openCells.push([x, y]);
+    }
+  }
+
+  // Distribution per match: tuned for a 21x15 maze (~120 open cells)
+  const pickCount = (max) => Math.max(1, Math.floor(rand() * max));
+  const placements = [
+    [OBSTACLE_TYPES.SPIKE, pickCount(4) + 2],   // 2–5 spikes
+    [OBSTACLE_TYPES.SPEED, pickCount(3) + 2],   // 2–4 speed pads
+    [OBSTACLE_TYPES.SLOW,  pickCount(3) + 1],   // 1–3 slow puddles
+    [OBSTACLE_TYPES.JUMP,  pickCount(3) + 1],   // 1–3 jump pads
+  ];
+  for (const [type, count] of placements) {
+    for (let i = 0; i < count && openCells.length > 0; i++) {
+      const idx = Math.floor(rand() * openCells.length);
+      const [x, y] = openCells.splice(idx, 1)[0];
+      obstacles[y][x] = { type };
+    }
+  }
+
+  return { grid, cols, rows, treasure: [ccx, ccy], obstacles };
 }
 
 // ---------- BFS pathfinding ----------
@@ -102,7 +147,7 @@ const NON_YOU_CLASSES = ["polar", "angel", "rainbow", "helmet", "engineer", "pol
 function createBattleSim(seed, you) {
   const cols = 21, rows = 15; // smaller for 3D performance
   const maze = genMaze(cols, rows, seed);
-  const { grid, treasure } = maze;
+  const { grid, treasure, obstacles } = maze;
 
   const spawnPool = [
     [1, 1], [cols - 2, 1], [1, rows - 2], [cols - 2, rows - 2],
@@ -210,7 +255,11 @@ function createBattleSim(seed, you) {
       }
 
       if (a.cooldown > 0) continue;
-      a.cooldown = a.moveCooldown;
+      // Apply boost / slow modifiers (from speed pad / slow puddle)
+      let cd = a.moveCooldown;
+      if ((a.boostUntil || 0) > tick) cd = Math.max(1, Math.floor(cd / 2));
+      if ((a.slowUntil || 0) > tick)  cd = cd * 2;
+      a.cooldown = cd;
 
       let goal;
       const aggressive = a.hp > a.maxHp * 0.35 && nearestEnemy && a.strength > 60;
@@ -238,6 +287,62 @@ function createBattleSim(seed, you) {
           a.x = nx; a.y = ny;
           a.lastMoveTick = tick;
           a.path.shift();
+
+          // ---- Obstacle effect on the new cell ----
+          const ob = obstacles?.[a.y]?.[a.x];
+          if (ob) {
+            switch (ob.type) {
+              case OBSTACLE_TYPES.SPIKE: {
+                // Damage with a per-agent cooldown so they don't re-trigger
+                // every tick while stuck on the cell.
+                if ((a.lastSpikeAt || -100) < tick - 6) {
+                  const dmg = 8;
+                  a.hp -= dmg;
+                  a.lastSpikeAt = tick;
+                  a.lastDamageAt = tick;
+                  events.push({ t: tick, kind: "spike", to: a.id, dmg });
+                  if (a.hp <= 0) {
+                    a.alive = false;
+                    events.push({ t: tick, kind: "ko", from: -1, to: a.id });
+                  }
+                }
+                break;
+              }
+              case OBSTACLE_TYPES.SPEED: {
+                a.boostUntil = tick + 4;
+                events.push({ t: tick, kind: "boost", to: a.id });
+                break;
+              }
+              case OBSTACLE_TYPES.SLOW: {
+                a.slowUntil = tick + 3;
+                events.push({ t: tick, kind: "slow", to: a.id });
+                break;
+              }
+              case OBSTACLE_TYPES.JUMP: {
+                // Skip cells in current facing direction. Jump skill (only on
+                // player's agent) lets them clear an extra cell.
+                const jumpDist = (a.isYou && (you.skills?.jump?.level || 0) >= 1) ? 3 : 2;
+                // Round facing to nearest cardinal
+                const fx = Math.round(Math.sin(a.facing));
+                const fy = Math.round(Math.cos(a.facing));
+                let landedX = a.x, landedY = a.y;
+                for (let step = 1; step <= jumpDist; step++) {
+                  const tx = a.x + fx * step, ty = a.y + fy * step;
+                  if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) break;
+                  if (grid[ty][tx] === 1) break;
+                  const occupied = agents.some((o) => o !== a && o.alive && o.x === tx && o.y === ty);
+                  if (occupied) break;
+                  landedX = tx; landedY = ty;
+                }
+                if (landedX !== a.x || landedY !== a.y) {
+                  a.x = landedX; a.y = landedY;
+                  a.path = null;
+                  events.push({ t: tick, kind: "jump", to: a.id });
+                }
+                break;
+              }
+            }
+          }
         } else {
           a.path = null;
         }

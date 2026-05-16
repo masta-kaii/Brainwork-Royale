@@ -209,6 +209,79 @@ function createScene3D(container) {
     scene.add(topMesh);
     mazeMeshes.push(topMesh);
 
+    // ---- Obstacles ----
+    // Per-type tile geometry sits flush on the floor. We dispose with
+    // the rest of the maze on the next setReplay().
+    const obs = maze.obstacles;
+    if (obs) {
+      // Pre-allocate per-type material so all tiles share one
+      const obstacleMats = {
+        spike: new THREE.MeshStandardMaterial({
+          color: 0x401015, emissive: 0xff3355, emissiveIntensity: 0.9,
+          roughness: 0.6, metalness: 0.3,
+        }),
+        speed: new THREE.MeshStandardMaterial({
+          color: 0x103a3a, emissive: 0x5df2d6, emissiveIntensity: 0.7,
+          roughness: 0.5, metalness: 0.3,
+        }),
+        slow: new THREE.MeshStandardMaterial({
+          color: 0x10203a, emissive: 0x4488ff, emissiveIntensity: 0.4,
+          roughness: 0.85, metalness: 0.1, transparent: true, opacity: 0.85,
+        }),
+        jump: new THREE.MeshStandardMaterial({
+          color: 0x3a2a10, emissive: 0xffb84d, emissiveIntensity: 0.7,
+          roughness: 0.5, metalness: 0.3,
+        }),
+      };
+      const tileGeo = new THREE.BoxGeometry(CELL * 0.85, 0.06, CELL * 0.85);
+      const spikeGeo = new THREE.ConeGeometry(0.08, 0.22, 5);
+      const arrowGeo = new THREE.BoxGeometry(CELL * 0.18, 0.04, CELL * 0.55);
+
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const o = obs[y][x];
+          if (!o) continue;
+          const mat = obstacleMats[o.type];
+          if (!mat) continue;
+          const tile = new THREE.Mesh(tileGeo, mat);
+          tile.position.set(x * CELL, 0.04, y * CELL);
+          tile.receiveShadow = true;
+          scene.add(tile);
+          mazeMeshes.push(tile);
+
+          // Per-type decoration on top of the tile
+          if (o.type === "spike") {
+            // Four small spikes
+            for (let i = 0; i < 4; i++) {
+              const spike = new THREE.Mesh(spikeGeo, mat);
+              const ang = (i / 4) * Math.PI * 2;
+              spike.position.set(x * CELL + Math.cos(ang) * 0.18, 0.16, y * CELL + Math.sin(ang) * 0.18);
+              spike.castShadow = true;
+              scene.add(spike);
+              mazeMeshes.push(spike);
+            }
+          } else if (o.type === "speed") {
+            // Arrow pointing in a random direction (decorative)
+            const arrow = new THREE.Mesh(arrowGeo, mat);
+            arrow.position.set(x * CELL, 0.09, y * CELL);
+            arrow.rotation.y = (((x * 7 + y * 13) % 4) * Math.PI) / 2;
+            scene.add(arrow);
+            mazeMeshes.push(arrow);
+          } else if (o.type === "jump") {
+            // Plus-shaped pad
+            const a1 = new THREE.Mesh(arrowGeo, mat);
+            a1.position.set(x * CELL, 0.09, y * CELL);
+            scene.add(a1);
+            const a2 = new THREE.Mesh(arrowGeo, mat);
+            a2.position.set(x * CELL, 0.09, y * CELL);
+            a2.rotation.y = Math.PI / 2;
+            scene.add(a2);
+            mazeMeshes.push(a1, a2);
+          }
+        }
+      }
+    }
+
     // Treasure
     treasureGroup = new THREE.Group();
     const dGeo = new THREE.OctahedronGeometry(0.32, 0);

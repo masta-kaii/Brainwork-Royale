@@ -190,12 +190,12 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
               {/* Live event ticker bottom */}
               <div className="live-ticker">
                 {recentEvents.map((e, i) => {
-                  const from = sim.agents[e.from];
+                  const from = e.from != null && e.from >= 0 ? sim.agents[e.from] : null;
                   const to = e.to != null ? sim.agents[e.to] : null;
                   return (
                     <div key={`${e.t}-${i}`} className="live-ticker__item" style={{ opacity: 1 - i * 0.3 }}>
                       <span className="mono tiny" style={{ color: "var(--ink-3)" }}>t{e.t}</span>
-                      {e.kind === "hit" && (
+                      {e.kind === "hit" && from && to && (
                         <>
                           <span style={{ color: from.color }}>{from.name}</span>
                           <span className="mono tiny" style={{ color: "var(--ink-2)" }}>hits</span>
@@ -203,20 +203,60 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
                           <span className="mono tiny" style={{ color: "var(--magenta)" }}>−{e.dmg}</span>
                         </>
                       )}
-                      {e.kind === "ko" && (
+                      {e.kind === "dodge" && from && to && (
                         <>
-                          <span style={{ color: from.color }}>{from.name}</span>
-                          <span className="mono tiny" style={{ color: "var(--magenta)" }}>knocked out</span>
                           <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--mint)" }}>dodges</span>
+                          <span style={{ color: from.color }}>{from.name}</span>
                         </>
                       )}
-                      {e.kind === "treasure" && (
+                      {e.kind === "spike" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--magenta)" }}>steps on spikes</span>
+                          <span className="mono tiny" style={{ color: "var(--magenta)" }}>−{e.dmg}</span>
+                        </>
+                      )}
+                      {e.kind === "boost" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--mint)" }}>boost pad</span>
+                        </>
+                      )}
+                      {e.kind === "slow" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--ink-2)" }}>stuck in slime</span>
+                        </>
+                      )}
+                      {e.kind === "jump" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--amber)" }}>uses jump pad</span>
+                        </>
+                      )}
+                      {e.kind === "ko" && to && (
+                        <>
+                          {from
+                            ? <>
+                                <span style={{ color: from.color }}>{from.name}</span>
+                                <span className="mono tiny" style={{ color: "var(--magenta)" }}>knocked out</span>
+                                <span style={{ color: to.color }}>{to.name}</span>
+                              </>
+                            : <>
+                                <span style={{ color: to.color }}>{to.name}</span>
+                                <span className="mono tiny" style={{ color: "var(--magenta)" }}>fell to the spikes</span>
+                              </>
+                          }
+                        </>
+                      )}
+                      {e.kind === "treasure" && from && (
                         <>
                           <span style={{ color: from.color }}>{from.name}</span>
                           <span className="mono tiny" style={{ color: "var(--amber)" }}>secured treasure</span>
                         </>
                       )}
-                      {e.kind === "last" && (
+                      {e.kind === "last" && from && (
                         <>
                           <span style={{ color: from.color }}>{from.name}</span>
                           <span className="mono tiny" style={{ color: "var(--mint)" }}>is the last AI standing</span>

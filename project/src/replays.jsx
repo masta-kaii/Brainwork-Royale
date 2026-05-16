@@ -96,13 +96,17 @@ function ReplayViewer({ replay, onClose }) {
     ? replay.agents.find((a) => a.id === replay.winnerId)
     : null;
 
-  // Build a sparse stat strip of "what's happening per tick" for the timeline
+  // Build a sparse stat strip of "what's happening per tick" for the timeline.
+  // Only the high-signal events get dots; routine hits/dodges/boosts would
+  // pack the scrubber wall-to-wall with grey.
   const eventDots = React.useMemo(() => {
-    return replay.events.map((e) => ({
+    const SHOWN = new Set(["ko", "treasure", "last", "spike"]);
+    return replay.events.filter((e) => SHOWN.has(e.kind)).map((e) => ({
       pct: (e.t / total) * 100,
       color: e.kind === "ko" ? "var(--magenta)" :
              e.kind === "treasure" ? "var(--amber)" :
              e.kind === "last" ? "var(--mint)" :
+             e.kind === "spike" ? "var(--magenta)" :
              "var(--ink-3)",
       kind: e.kind,
     }));
@@ -171,7 +175,7 @@ function ReplayViewer({ replay, onClose }) {
               <div className="card__label">Event log · click to jump</div>
               <div style={{ display: "grid", gap: 3, maxHeight: 280, overflowY: "auto", fontFamily: "var(--font-display)", fontSize: 11 }}>
                 {visibleEvents.map((e, i) => {
-                  const from = replay.agents[e.from];
+                  const from = e.from != null && e.from >= 0 ? replay.agents[e.from] : null;
                   const to = e.to != null ? replay.agents[e.to] : null;
                   return (
                     <div
@@ -180,7 +184,7 @@ function ReplayViewer({ replay, onClose }) {
                       onClick={() => jumpToEvent(e)}
                     >
                       <span style={{ color: "var(--ink-3)", width: 32 }}>t{e.t}</span>
-                      {e.kind === "hit" && (
+                      {e.kind === "hit" && from && to && (
                         <>
                           <span style={{ color: from.color }}>{from.name}</span>
                           <span style={{ color: "var(--ink-2)" }}>→</span>
@@ -188,20 +192,60 @@ function ReplayViewer({ replay, onClose }) {
                           <span style={{ color: "var(--magenta)", marginLeft: "auto" }}>−{e.dmg}</span>
                         </>
                       )}
-                      {e.kind === "ko" && (
+                      {e.kind === "dodge" && from && to && (
                         <>
-                          <span style={{ color: from.color }}>{from.name}</span>
-                          <span style={{ color: "var(--magenta)" }}>KO'd</span>
                           <span style={{ color: to.color }}>{to.name}</span>
+                          <span style={{ color: "var(--mint)" }}>↺ dodges</span>
+                          <span style={{ color: from.color }}>{from.name}</span>
                         </>
                       )}
-                      {e.kind === "treasure" && (
+                      {e.kind === "spike" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span style={{ color: "var(--magenta)" }}>▴ spike</span>
+                          <span style={{ color: "var(--magenta)", marginLeft: "auto" }}>−{e.dmg}</span>
+                        </>
+                      )}
+                      {e.kind === "boost" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span style={{ color: "var(--mint)" }}>» boost</span>
+                        </>
+                      )}
+                      {e.kind === "slow" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span style={{ color: "var(--ink-2)" }}>~ slow</span>
+                        </>
+                      )}
+                      {e.kind === "jump" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span style={{ color: "var(--amber)" }}>↟ jump</span>
+                        </>
+                      )}
+                      {e.kind === "ko" && to && (
+                        <>
+                          {from
+                            ? <>
+                                <span style={{ color: from.color }}>{from.name}</span>
+                                <span style={{ color: "var(--magenta)" }}>KO'd</span>
+                                <span style={{ color: to.color }}>{to.name}</span>
+                              </>
+                            : <>
+                                <span style={{ color: to.color }}>{to.name}</span>
+                                <span style={{ color: "var(--magenta)" }}>fell to spikes</span>
+                              </>
+                          }
+                        </>
+                      )}
+                      {e.kind === "treasure" && from && (
                         <>
                           <span style={{ color: from.color }}>{from.name}</span>
                           <span style={{ color: "var(--amber)" }}>★ treasure</span>
                         </>
                       )}
-                      {e.kind === "last" && (
+                      {e.kind === "last" && from && (
                         <>
                           <span style={{ color: from.color }}>{from.name}</span>
                           <span style={{ color: "var(--mint)" }}>last standing</span>
