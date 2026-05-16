@@ -78,17 +78,39 @@
        expose RAPIER on window after init and dispatch 'rapier-ready' so
        any script that needs physics can wait for it. -->
   <script type="module">
-    import RAPIER from 'https://esm.sh/@dimforge/[email protected]';
+    // jsdelivr serves the package's es-module entry directly. esm.sh used
+    // to mangle the wasm base64 payload in some networks; jsdelivr is a
+    // straight passthrough.
+    const RAPIER_URL = "https://cdn.jsdelivr.net/npm/@dimforge/[email protected]/rapier.es.js";
+
+    // Fail-safe timeout: if init() hasn't resolved in 20 s, surface the
+    // error to the UI instead of leaving the user staring at "BOOTING…".
+    const FAIL_TIMEOUT = 20000;
+    const timer = setTimeout(() => {
+      if (!window.RAPIER_READY) {
+        console.error("Rapier init timed out after", FAIL_TIMEOUT, "ms");
+        window.RAPIER_READY = true;
+        window.RAPIER_FAILED = true;
+        window.RAPIER_ERROR = new Error("init-timeout");
+        window.dispatchEvent(new Event("rapier-ready"));
+      }
+    }, FAIL_TIMEOUT);
+
     try {
+      const mod = await import(RAPIER_URL);
+      const RAPIER = mod.default || mod;
       await RAPIER.init();
+      clearTimeout(timer);
       window.RAPIER = RAPIER;
       window.RAPIER_READY = true;
     } catch (e) {
-      console.warn('Rapier init failed', e);
+      clearTimeout(timer);
+      console.error("Rapier failed to load:", e);
       window.RAPIER_READY = true;     // fail-open so non-physics screens still render
       window.RAPIER_FAILED = true;
+      window.RAPIER_ERROR = e;
     }
-    window.dispatchEvent(new Event('rapier-ready'));
+    window.dispatchEvent(new Event("rapier-ready"));
   </script>
 
   <!-- Data layer (Firestore wrapper) — must come before any JSX that uses dataLayer.* -->

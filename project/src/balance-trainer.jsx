@@ -35,13 +35,24 @@ function BalanceTrainer({ uid, profile, brains, onSpendCoins, onToast, onBrainSa
   }, []);
 
   if (failed) {
+    const err = window.RAPIER_ERROR;
+    const code = err?.message || String(err || "unknown");
     return (
       <div className="card" style={{ padding: 20 }}>
         <div className="card__label">Balance training unavailable</div>
-        <div className="mono tiny" style={{ color: "var(--ink-2)", marginTop: 8, lineHeight: 1.5 }}>
-          The Rapier physics engine failed to load — possibly a network issue or
-          an unsupported browser. Try a hard refresh (Ctrl/Cmd+Shift+R) or
-          check your console for details.
+        <div className="mono tiny" style={{ color: "var(--ink-2)", marginTop: 8, lineHeight: 1.6 }}>
+          The Rapier physics engine failed to load
+          {code === "init-timeout" ? " (timed out after 20s — slow network or CDN issue)" : ""}.
+          <br /><br />
+          Things to try:
+          <ul style={{ margin: "8px 0 0 20px", padding: 0 }}>
+            <li>Hard-refresh: Ctrl/Cmd + Shift + R</li>
+            <li>Try a different browser (Chrome / Firefox / Safari latest)</li>
+            <li>Open DevTools → Console and paste the red error here so we can pin it down</li>
+          </ul>
+          <div style={{ marginTop: 10, color: "var(--ink-3)" }}>
+            Error: <span style={{ color: "var(--magenta)" }}>{code}</span>
+          </div>
         </div>
       </div>
     );
