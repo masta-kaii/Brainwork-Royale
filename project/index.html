@@ -735,7 +735,7 @@
         <a class="nav__link" href="#loop">How It Works</a>
         <a class="nav__link" href="#classes">Classes</a>
         <a class="nav__link" href="#lab">Character Lab</a>
-        <a class="nav__link" href="Brainwork Royale.html">Demo →</a>
+        <a class="nav__link" href="app.html">Demo →</a>
       </nav>
       <div class="nav__cta">
         <button class="btn btn--ghost" data-modal="signin">Sign in</button>
@@ -1000,7 +1000,7 @@
         </div>
         <div class="cta__actions">
           <button class="btn btn--primary" data-modal="signup">Reserve a slot</button>
-          <a class="btn btn--ghost" href="Brainwork Royale.html">Try the demo</a>
+          <a class="btn btn--ghost" href="app.html">Try the demo</a>
         </div>
       </div>
     </section>
@@ -1019,6 +1019,9 @@
 
 <!-- ==================== MODAL ROOT ==================== -->
 <div id="modalRoot"></div>
+
+<!-- ==================== FIREBASE SDK ==================== -->
+<script type="module" src="src/firebase.js"></script>
 
 <!-- ==================== IMPORTMAP + THREE ==================== -->
 <script type="importmap">
@@ -1466,9 +1469,13 @@ function openModal(mode) {
   });
   const sw = document.getElementById('switchToSignup'); if (sw) sw.onclick = () => openModal('signup');
   const sw2 = document.getElementById('switchToSignin'); if (sw2) sw2.onclick = () => openModal('signin');
-  document.getElementById('modalCta').onclick = () => {
-    closeModal();
-    showToast(mode === 'signup' ? 'Beta slot reserved · check inbox' : 'Welcome back, warden_07');
+  document.getElementById('modalCta').onclick = async () => {
+    const wrap = document.getElementById('modalWrap');
+    const email = wrap.querySelector('input[type=email]')?.value?.trim();
+    const password = wrap.querySelector('input[type=password]')?.value;
+    if (!email || !password) { showToast('⚠ Email and password required'); return; }
+    if (mode === 'signup') await doSignUp(email, password);
+    else await doSignIn(email, password);
   };
 }
 function closeModal() { modalRoot.innerHTML = ''; }
@@ -1484,9 +1491,88 @@ document.querySelectorAll('#loginCard .login-card__switch button').forEach(b => 
     if (b.dataset.tab === 'signup') openModal('signup');
   });
 });
-document.getElementById('loginForm').addEventListener('submit', () => {
-  showToast('Welcome back, warden_07 · entering deck…');
-  setTimeout(() => { location.href = 'Brainwork Royale.html'; }, 700);
+
+/* ============================================================
+   FIREBASE AUTH — wire the inline login form, modal CTA, providers
+   ============================================================ */
+function whenFirebaseReady(cb) {
+  if (window.firebase) { cb(); return; }
+  window.addEventListener('firebase-ready', cb, { once: true });
+}
+
+const friendlyAuthError = (code) => ({
+  'auth/invalid-credential': 'Wrong email or password',
+  'auth/invalid-email': 'Invalid email',
+  'auth/user-not-found': 'No account with that email',
+  'auth/wrong-password': 'Wrong password',
+  'auth/email-already-in-use': 'Email already registered · sign in instead',
+  'auth/weak-password': 'Password must be at least 6 characters',
+  'auth/popup-closed-by-user': 'Sign-in cancelled',
+  'auth/popup-blocked': 'Popup blocked — allow popups and retry',
+})[code] || 'Sign-in failed · ' + (code || 'unknown');
+
+async function bootstrapUserDoc(user) {
+  const { db, doc, getDoc, setDoc, serverTimestamp } = window.firebase;
+  const ref = doc(db, 'users', user.uid);
+  const snap = await getDoc(ref);
+  if (snap.exists()) return;
+  await setDoc(ref, {
+    role: 'player',
+    email: user.email || '',
+    displayName: user.displayName || (user.email || '').split('@')[0] || 'warden',
+    createdAt: serverTimestamp(),
+  });
+}
+
+async function doSignIn(email, password) {
+  try {
+    showToast('Authenticating…');
+    await window.firebase.signInEmail(email, password);
+    showToast('Welcome back · entering deck…');
+    setTimeout(() => { location.href = 'app.html'; }, 600);
+  } catch (e) { showToast('⚠ ' + friendlyAuthError(e.code)); }
+}
+
+async function doSignUp(email, password) {
+  try {
+    showToast('Creating account…');
+    const cred = await window.firebase.signUpEmail(email, password);
+    await bootstrapUserDoc(cred.user);
+    showToast('Warden ID claimed · entering deck…');
+    setTimeout(() => { location.href = 'app.html'; }, 600);
+  } catch (e) { showToast('⚠ ' + friendlyAuthError(e.code)); }
+}
+
+async function doGoogleSignIn() {
+  try {
+    showToast('Opening Google sign-in…');
+    const cred = await window.firebase.signInGoogle();
+    await bootstrapUserDoc(cred.user);
+    showToast('Welcome · entering deck…');
+    setTimeout(() => { location.href = 'app.html'; }, 600);
+  } catch (e) { showToast('⚠ ' + friendlyAuthError(e.code)); }
+}
+
+document.getElementById('loginForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  whenFirebaseReady(async () => {
+    const card = document.getElementById('loginCard');
+    const email = card.querySelector('input[type=email]').value.trim();
+    const password = card.querySelector('input[type=password]').value;
+    if (!email || !password) { showToast('⚠ Email and password required'); return; }
+    await doSignIn(email, password);
+  });
+});
+
+// Wire provider buttons. First = Google (active), second = Apple (disabled until paid dev account).
+whenFirebaseReady(() => {
+  const provs = document.querySelectorAll('#loginCard .prov-btn');
+  if (provs[0]) provs[0].addEventListener('click', doGoogleSignIn);
+  if (provs[1]) {
+    provs[1].title = 'Apple sign-in requires a paid Apple Developer account — not enabled yet';
+    provs[1].style.opacity = '0.45';
+    provs[1].addEventListener('click', () => showToast('Apple sign-in not enabled yet'));
+  }
 });
 
 /* ============================================================

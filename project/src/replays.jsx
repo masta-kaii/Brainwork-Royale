@@ -15,12 +15,23 @@ function ReplayViewer({ replay, onClose }) {
 
   const [paused, setPaused] = React.useState(false);
   const [speed, setSpeed] = React.useState(2);
+  const [hintFaded, setHintFaded] = React.useState(false);
   // tickFloat is the "playhead" in tick-units (continuous)
   const tickFloatRef = React.useRef(0);
   const [tickInt, setTickInt] = React.useState(0);
   const scrubbingRef = React.useRef(false);
 
   const total = replay.totalTicks || (replay.snaps.length - 1);
+
+  const resetCamera = React.useCallback(() => {
+    sceneRef.current?.resetCamera();
+  }, []);
+
+  React.useEffect(() => {
+    setHintFaded(false);
+    const id = setTimeout(() => setHintFaded(true), 4500);
+    return () => clearTimeout(id);
+  }, [replay]);
 
   // Init scene
   React.useEffect(() => {
@@ -125,7 +136,21 @@ function ReplayViewer({ replay, onClose }) {
 
         <div className="replay-viewer__body">
           <div className="replay-stage">
-            <div ref={stageRef} className="three-mount" />
+            <div
+              ref={stageRef}
+              className="three-mount"
+              onDoubleClick={resetCamera}
+            />
+
+            <button
+              className="cam-ctl"
+              onClick={resetCamera}
+              title="Reset view"
+              aria-label="Reset view"
+            >↺</button>
+            <div className={`cam-hint ${hintFaded ? "is-faded" : ""}`}>
+              <kbd>DRAG</kbd> rotate · <kbd>SCROLL</kbd> zoom · <kbd>DBL-CLK</kbd> reset
+            </div>
 
             {/* HUD: current tick + tag */}
             <div className="battle-hud" style={{ pointerEvents: "none" }}>

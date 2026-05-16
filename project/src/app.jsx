@@ -4,8 +4,7 @@
 
 const { useState, useEffect, useRef, useMemo } = React;
 
-const INITIAL_PLAYER = {
-  handle: "warden_07",
+const DEFAULT_PLAYER = {
   rank: "PLATINUM III",
   coins: 4820,
   gems: 24,
@@ -51,10 +50,27 @@ function buildSeedReplays(ai) {
   });
 }
 
-function App() {
+function App({ user }) {
   const [tab, setTab] = useState("home");
-  const [player] = useState(INITIAL_PLAYER);
+  const [player] = useState(() => ({
+    ...DEFAULT_PLAYER,
+    uid: user.uid,
+    email: user.email,
+    handle: user.displayName || (user.email ? user.email.split("@")[0] : "warden"),
+  }));
   const [ai, setAi] = useState(INITIAL_AI);
+
+  // Redirect to landing if signed out from another tab
+  useEffect(() => {
+    return window.firebase.onAuthStateChanged((u) => {
+      if (!u) location.replace("/");
+    });
+  }, []);
+
+  const signOut = async () => {
+    try { await window.firebase.signOut(); } catch (e) { /* listener handles redirect */ }
+    location.replace("/");
+  };
   const [quests, setQuests] = useState(INITIAL_DAILY_QUESTS);
   const [toast, setToast] = useState(null);
   const [battleSeed, setBattleSeed] = useState(8201);
@@ -128,7 +144,9 @@ function App() {
           <div className="rail__nav-label">Meta</div>
           <div className="rail-item"><span className="rail-item__dot" />Shop</div>
           <div className="rail-item"><span className="rail-item__dot" />Leaderboard</div>
-          <div className="rail-item"><span className="rail-item__dot" />Settings</div>
+          <div className="rail-item" onClick={signOut} title={`Sign out ${player.email || ''}`}>
+            <span className="rail-item__dot" />Sign out
+          </div>
         </nav>
 
         <div className="rail__footer">
@@ -204,12 +222,55 @@ function App() {
   );
 }
 
-function boot() {
-  // Clear the boot loader DOM (which lives inside #root)
+function setBootStatus(msg) {
+  const el = document.getElementById("boot-msg");
+  if (el) el.textContent = msg;
+}
+
+function mountApp(user) {
   const rootEl = document.getElementById("root");
   while (rootEl.firstChild) rootEl.removeChild(rootEl.firstChild);
   const root = ReactDOM.createRoot(rootEl);
-  root.render(<App />);
+  root.render(<App user={user} />);
 }
+
+async function ensureUserDoc(user) {
+  const { db, doc, getDoc, setDoc, serverTimestamp } = window.firebase;
+  const ref = doc(db, "users", user.uid);
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) return;
+    await setDoc(ref, {
+      role: "player",
+      email: user.email || "",
+      displayName: user.displayName || (user.email || "").split("@")[0] || "warden",
+      createdAt: serverTimestamp(),
+    });
+  } catch (e) {
+    // Rules can reject in test mode or before deploy — render the app anyway,
+    // it just means Firestore-backed features will fail until rules are live.
+    console.warn("ensureUserDoc failed", e);
+  }
+}
+
+function boot() {
+  if (!window.firebase) {
+    setBootStatus("WAITING FOR FIREBASE…");
+    window.addEventListener("firebase-ready", boot, { once: true });
+    return;
+  }
+  setBootStatus("VERIFYING WARDEN ID…");
+  const unsub = window.firebase.onAuthStateChanged(async (user) => {
+    unsub();
+    if (!user) {
+      location.replace("/");
+      return;
+    }
+    setBootStatus("SYNCING PROFILE…");
+    await ensureUserDoc(user);
+    mountApp(user);
+  });
+}
+
 if (window.PEP_READY) boot();
-else window.addEventListener('app-ready', boot, { once: true });
+else window.addEventListener("app-ready", boot, { once: true });
