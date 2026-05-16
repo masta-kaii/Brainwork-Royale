@@ -27,6 +27,7 @@ function App({ user, initialState }) {
   const [ai, setAi] = useState(initialState.character);
   const [quests, setQuests] = useState(initialState.quests);
   const [skills, setSkills] = useState(initialState.skills || {});
+  const [brains, setBrains] = useState(initialState.brains || {});
   const [toast, setToast] = useState(null);
   const [battleSeed, setBattleSeed] = useState(8201);
   const [replays, setReplays] = useState(() => buildSeedReplays(initialState.character));
@@ -248,9 +249,14 @@ function App({ user, initialState }) {
               uid={uid}
               ai={ai}
               skills={skills}
+              brains={brains}
               profile={profile}
               onSkillProgress={onSkillProgress}
               onSpendCoins={onSpendCoins}
+              onBrainSaved={(key, json) => {
+                setBrains((b) => ({ ...b, [key]: json }));
+                window.dataLayer?.saveBrain?.(uid, key, json);
+              }}
               onToast={showToast}
             />
           )}
@@ -399,6 +405,7 @@ function offlineFallbackState(user) {
     character: dl ? { ...dl.DEFAULT_CHARACTER } : { name: "ALBRT-7", class: "engineer", tier: "Bronze", generation: 1, trainingQueue: 0, stats: { speed: 50, stamina: 50, intelligence: 50, strength: 50 } },
     quests: dl ? dl.DEFAULT_QUESTS.map((q) => ({ ...q, status: "active", rewardClaimed: false })) : [],
     skills: fallbackSkills,
+    brains: {},
   };
 }
 
