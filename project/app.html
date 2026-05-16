@@ -121,13 +121,17 @@
   <script type="text/babel" src="src/ui.jsx"></script>
   <script type="text/babel" src="src/sim.jsx"></script>
   <script type="text/babel" src="src/scene3d.jsx"></script>
+  <!-- Skill tree (declarative graph) before training-envs which references nothing
+       runtime-y, before brain-engine which references trainingEnvs at evalBalance call -->
+  <script type="text/babel" src="src/skill-tree.jsx"></script>
   <script type="text/babel" src="src/brain-engine.jsx"></script>
+  <script type="text/babel" src="src/training-envs.jsx"></script>
   <script type="text/babel" src="src/home.jsx"></script>
   <script type="text/babel" src="src/quests.jsx"></script>
   <script type="text/babel" src="src/battle.jsx"></script>
   <script type="text/babel" src="src/replays.jsx"></script>
   <script type="text/babel" src="src/brain.jsx"></script>
-  <script type="text/babel" src="src/balance-trainer.jsx"></script>
+  <script type="text/babel" src="src/skill-trainer.jsx"></script>
   <script type="text/babel" src="src/training.jsx"></script>
   <script type="text/babel" src="src/app.jsx"></script>
 </body>
