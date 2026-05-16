@@ -143,7 +143,7 @@ function bfsPath(grid, cols, rows, start, goal) {
 }
 
 // ---------- Battle simulation ----------
-const AGENT_NAMES = ["ALBRT-7", "VEX-22", "PYTH-13", "NOMAD-9", "GLITCH", "ORACLE", "RUST-4", "PRISM"];
+const AGENT_NAMES = ["Berok 1", "Berok 2", "Berok 3", "Berok 4", "Berok 5", "Berok 6", "Berok 7", "Berok 8"];
 const NON_YOU_CLASSES = ["polar", "angel", "rainbow", "helmet", "engineer", "polar", "angel"];
 
 // ---------- Race-track generator (open vertical corridor) ----------
