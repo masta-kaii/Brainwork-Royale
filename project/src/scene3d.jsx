@@ -548,4 +548,208 @@ function createScene3D(container) {
   };
 }
 
-Object.assign(window, { createScene3D, parseColor, CELL_SIZE: CELL });
+// ============================================================
+// TRAINING SCENE — small open arena, single PEP-Smol agent
+// playing one animation clip. Used by the Training Center.
+// ============================================================
+function createTrainingScene(container, classId) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05060c);
+  scene.fog = new THREE.Fog(0x05060c, 8, 22);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  container.appendChild(renderer.domElement);
+  renderer.domElement.style.display = "block";
+  renderer.domElement.style.width = "100%";
+  renderer.domElement.style.height = "100%";
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 60);
+  function resize() {
+    const r = container.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return;
+    renderer.setSize(r.width, r.height, false);
+    camera.aspect = r.width / r.height;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  const ro = new ResizeObserver(resize);
+  ro.observe(container);
+
+  let controls = null;
+  if (window.OrbitControls) {
+    controls = new window.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.rotateSpeed = 0.85;
+    controls.zoomSpeed = 0.9;
+    controls.minDistance = 2.4;
+    controls.maxDistance = 9;
+    controls.maxPolarAngle = Math.PI * 0.49;
+    controls.minPolarAngle = Math.PI * 0.10;
+    controls.enablePan = false;
+    controls.target.set(0, 0.7, 0);
+  }
+
+  // Lights — match the battle scene aesthetic
+  scene.add(new THREE.AmbientLight(0x3a4060, 0.6));
+  const sun = new THREE.DirectionalLight(0xfff2dc, 1.0);
+  sun.position.set(4, 8, 3);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -6; sun.shadow.camera.right = 6;
+  sun.shadow.camera.top = 6; sun.shadow.camera.bottom = -6;
+  sun.shadow.bias = -0.0006;
+  scene.add(sun);
+  const accent = new THREE.PointLight(0x5df2d6, 1.4, 12);
+  accent.position.set(-2, 3, 2);
+  scene.add(accent);
+
+  // Arena floor + border
+  const FLOOR_R = 4;
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(FLOOR_R, 48),
+    new THREE.MeshStandardMaterial({ color: 0x0a0d1c, roughness: 0.95, metalness: 0.05 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  const grid = new THREE.GridHelper(FLOOR_R * 2, 16, 0x1f2a48, 0x1a2238);
+  grid.position.y = 0.01;
+  scene.add(grid);
+
+  // Progress ring on the ground — shows training-pack progress
+  const progRingGeo = new THREE.RingGeometry(FLOOR_R * 0.78, FLOOR_R * 0.86, 64, 1, -Math.PI / 2, Math.PI * 2);
+  const progRingMat = new THREE.MeshBasicMaterial({
+    color: 0x5df2d6, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+  });
+  const progRing = new THREE.Mesh(progRingGeo, progRingMat);
+  progRing.rotation.x = -Math.PI / 2;
+  progRing.position.y = 0.025;
+  scene.add(progRing);
+
+  // Spawn one PEP-Smol — duplicates the per-agent setup from makePepAgent
+  // (kept self-contained so the training scene has no dependency on a sim)
+  let model = null, mixer = null;
+  const actions = {};
+  const tintColor = parseColor((window.CLASSES?.[classId]?.color) || "#5df2d6");
+
+  function applyTint(o) {
+    if (!o.isMesh || !o.material) return;
+    const list = Array.isArray(o.material) ? o.material : [o.material];
+    const next = list.map((m) => {
+      const cm = m.clone();
+      cm._om_cloned = true;
+      if (cm.color && /hip|belly|chest|arm|forearm|leg|thigh|foot/i.test(cm.name || "")) {
+        cm.color.copy(cm.color.clone().multiply(tintColor).lerp(tintColor, 0.55));
+      }
+      if (cm.emissive) cm.emissiveIntensity = Math.min(cm.emissiveIntensity ?? 1, 0.5);
+      return cm;
+    });
+    o.material = Array.isArray(o.material) ? next : next[0];
+    o.castShadow = true;
+    o.receiveShadow = true;
+  }
+
+  if (window.PEP_BASE && !window.PEP_FAILED) {
+    const tmp = window.PEP_BASE.scene.clone(true);
+    const box = new THREE.Box3().setFromObject(tmp);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const targetH = 1.6;
+    const scale = targetH / Math.max(size.y, 0.1);
+    const groundOffset = -box.min.y * scale;
+    const cx = (box.min.x + box.max.x) / 2 * scale;
+    const cz = (box.min.z + box.max.z) / 2 * scale;
+
+    model = window.PEP_BASE.scene.clone(true);
+    model.scale.setScalar(scale);
+    model.position.set(-cx, groundOffset, -cz);
+    model.traverse(applyTint);
+    scene.add(model);
+
+    mixer = new THREE.AnimationMixer(model);
+    window.PEP_BASE.animations.forEach((clip) => {
+      actions[clip.name] = mixer.clipAction(clip);
+    });
+  } else {
+    // Capsule fallback if PEP failed to load
+    const f = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.22, 0.6, 6, 12),
+      new THREE.MeshStandardMaterial({ color: tintColor, roughness: 0.55 })
+    );
+    f.position.y = 0.7; f.castShadow = true;
+    scene.add(f);
+  }
+
+  // Position camera for a "TV close-up" framing
+  camera.position.set(2.6, 2.0, 3.4);
+  camera.lookAt(0, 0.8, 0);
+  if (controls) controls.update();
+
+  let currentName = null;
+  let currentAction = null;
+  function setSkill(clipName, speed = 1) {
+    if (!mixer) return;
+    const next = actions[clipName];
+    if (!next) return;
+    next.setEffectiveTimeScale(speed);
+    if (currentName === clipName) return;
+    next.reset();
+    next.setLoop(THREE.LoopRepeat, Infinity);
+    next.setEffectiveWeight(1);
+    next.play();
+    if (currentAction && currentAction !== next) {
+      currentAction.crossFadeTo(next, 0.28, false);
+    }
+    currentAction = next;
+    currentName = clipName;
+  }
+
+  function setSpeed(speed) {
+    if (currentAction) currentAction.setEffectiveTimeScale(speed);
+  }
+
+  let progress = 0; // 0..1
+  function setProgress(v) { progress = Math.max(0, Math.min(1, v)); }
+
+  let elapsed = 0;
+  function renderFrame(dt) {
+    elapsed += dt;
+    if (mixer) mixer.update(dt);
+
+    // Progress ring grows from a tiny arc to full as `progress` rises
+    const fullArc = Math.PI * 2;
+    const arc = Math.max(0.0001, progress * fullArc);
+    progRing.geometry.dispose();
+    progRing.geometry = new THREE.RingGeometry(FLOOR_R * 0.78, FLOOR_R * 0.86, 64, 1, -Math.PI / 2, arc);
+    progRing.material.opacity = 0.4 + Math.sin(elapsed * 4) * 0.15 + progress * 0.4;
+
+    accent.intensity = 1.2 + Math.sin(elapsed * 2.4) * 0.4;
+    if (controls) controls.update();
+    renderer.render(scene, camera);
+  }
+
+  function dispose() {
+    ro.disconnect();
+    if (controls) controls.dispose();
+    scene.traverse((o) => {
+      if (o.geometry) o.geometry.dispose?.();
+      if (o.material) {
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        list.forEach((m) => m.dispose?.());
+      }
+    });
+    renderer.dispose();
+    if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+  }
+
+  return { setSkill, setSpeed, setProgress, renderFrame, dispose, get controls() { return controls; } };
+}
+
+Object.assign(window, { createScene3D, createTrainingScene, parseColor, CELL_SIZE: CELL });

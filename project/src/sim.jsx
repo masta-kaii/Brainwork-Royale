@@ -117,7 +117,23 @@ function createBattleSim(seed, you) {
     const cls = i === 0 ? you.class : NON_YOU_CLASSES[i - 1];
     const c = CLASSES[cls];
     const baseHp = 100;
-    const moveCooldown = Math.max(3, Math.floor(20 - c.stats.speed * 0.15));
+
+    // Skill bonuses — only apply to the player's agent. Skills come
+    // in as you.skills = { run: { level, ... }, ... } from Firestore.
+    let speedBonus = 0, stamBonus = 0, strBonus = 0, cdBonus = 0, dodgeChance = 0;
+    if (i === 0 && you.skills) {
+      const s = you.skills;
+      speedBonus  = (s.run?.level || 0) * 8 + (s.dodge?.level || 0) * 4;
+      stamBonus   = (s.walk?.level || 0) * 8 + (s.jump?.level || 0) * 4;
+      strBonus    = (s.attack?.level || 0) * 6 + (s.combo?.level || 0) * 8;
+      cdBonus     = (s.combo?.level || 0);
+      dodgeChance = Math.min(40, (s.dodge?.level || 0) * 12);
+    }
+
+    const effectiveSpeed = c.stats.speed + speedBonus;
+    const moveCooldown = Math.max(2, Math.floor(20 - effectiveSpeed * 0.15));
+    const attackCooldownBase = Math.max(4, 8 - cdBonus);
+
     agents.push({
       id: i,
       name: i === 0 ? you.name : AGENT_NAMES[i],
@@ -131,9 +147,11 @@ function createBattleSim(seed, you) {
       alive: true,
       cooldown: Math.floor(Math.random() * moveCooldown),
       moveCooldown,
-      strength: c.stats.strength,
+      strength: c.stats.strength + strBonus,
       vision: 4 + Math.floor(c.stats.intelligence / 20),
-      stamina: c.stats.stamina,
+      stamina: c.stats.stamina + stamBonus,
+      attackCooldownBase,
+      dodgeChance, // 0–40
       path: null,
       attackCooldown: 0,
       lastDamageAt: -100,
@@ -170,15 +188,22 @@ function createBattleSim(seed, you) {
         const dx = nearestEnemy.x - a.x, dy = nearestEnemy.y - a.y;
         a.facing = Math.atan2(dx, dy);
         if (a.attackCooldown === 0) {
-          const dmg = 6 + Math.floor(a.strength * 0.18);
-          nearestEnemy.hp -= dmg;
-          nearestEnemy.lastDamageAt = tick;
-          a.attackCooldown = 8;
-          a.lastAttackAt = tick;
-          events.push({ t: tick, kind: "hit", from: a.id, to: nearestEnemy.id, dmg });
-          if (nearestEnemy.hp <= 0) {
-            nearestEnemy.alive = false;
-            events.push({ t: tick, kind: "ko", from: a.id, to: nearestEnemy.id });
+          // Dodge — defender's dodgeChance (0–40) gates the hit
+          if (nearestEnemy.dodgeChance && Math.random() * 100 < nearestEnemy.dodgeChance) {
+            a.attackCooldown = a.attackCooldownBase || 8;
+            a.lastAttackAt = tick;
+            events.push({ t: tick, kind: "dodge", from: a.id, to: nearestEnemy.id });
+          } else {
+            const dmg = 6 + Math.floor(a.strength * 0.18);
+            nearestEnemy.hp -= dmg;
+            nearestEnemy.lastDamageAt = tick;
+            a.attackCooldown = a.attackCooldownBase || 8;
+            a.lastAttackAt = tick;
+            events.push({ t: tick, kind: "hit", from: a.id, to: nearestEnemy.id, dmg });
+            if (nearestEnemy.hp <= 0) {
+              nearestEnemy.alive = false;
+              events.push({ t: tick, kind: "ko", from: a.id, to: nearestEnemy.id });
+            }
           }
         }
         continue;

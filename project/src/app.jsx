@@ -26,10 +26,15 @@ function App({ user, initialState }) {
   const [profile, setProfile] = useState(initialState.profile);
   const [ai, setAi] = useState(initialState.character);
   const [quests, setQuests] = useState(initialState.quests);
+  const [skills, setSkills] = useState(initialState.skills || {});
   const [toast, setToast] = useState(null);
   const [battleSeed, setBattleSeed] = useState(8201);
   const [replays, setReplays] = useState(() => buildSeedReplays(initialState.character));
   const [classModal, setClassModal] = useState(false);
+
+  // AI object passed to BattleScreen includes the trained skill levels so
+  // sim.jsx can read them and apply battle bonuses.
+  const aiWithSkills = useMemo(() => ({ ...ai, skills }), [ai, skills]);
 
   // Composite "player" object used by HomeScreen + rail
   const player = useMemo(() => ({
@@ -112,9 +117,36 @@ function App({ user, initialState }) {
     showToast("Match saved to Replays · open Replays to study");
   };
 
+  // ---- Training handlers ----
+  const onSpendCoins = (cost) => {
+    const newCoins = Math.max(0, profile.currency.coins - cost);
+    setProfile((p) => ({ ...p, currency: { ...p.currency, coins: newCoins } }));
+    window.dataLayer?.saveCurrency(uid, { coins: newCoins });
+  };
+
+  const onSkillProgress = (skillId, { generation, level, leveledUp }) => {
+    setSkills((sk) => ({
+      ...sk,
+      [skillId]: { ...(sk[skillId] || { id: skillId }), generation, level },
+    }));
+    const partial = { generation, level };
+    if (level >= (window.dataLayer?.MAX_LEVEL || 3)) partial.masteredAt = window.firebase?.serverTimestamp?.();
+    window.dataLayer?.saveSkill(uid, skillId, partial);
+
+    if (leveledUp) {
+      const def = (window.dataLayer?.SKILL_DEFS || []).find((s) => s.id === skillId);
+      const isMastered = level >= (window.dataLayer?.MAX_LEVEL || 3);
+      showToast(`${def?.name || skillId} ${isMastered ? "MASTERED" : `→ L${level}`}`);
+    }
+  };
+
+  const MAX = window.dataLayer?.MAX_LEVEL || 3;
+  const masteredCount = Object.values(skills).filter((s) => s.level >= MAX).length;
+
   const navItems = [
     { id: "home", label: "Command Deck", glyph: "◉" },
     { id: "quests", label: "Quests", glyph: "★", count: quests.filter(q => q.progress < q.target).length },
+    { id: "training", label: "Training", glyph: "✦", count: masteredCount > 0 ? `${masteredCount}★` : null },
     { id: "battle", label: "Battle", glyph: "▶", count: "LIVE", live: true },
     { id: "replays", label: "Replays", glyph: "◷", count: replays.length },
     { id: "brain", label: "Brain", glyph: "❖", count: `G${ai.generation}` },
@@ -196,9 +228,20 @@ function App({ user, initialState }) {
               onToast={showToast}
             />
           )}
+          {tab === "training" && (
+            <TrainingScreen
+              uid={uid}
+              ai={ai}
+              skills={skills}
+              profile={profile}
+              onSkillProgress={onSkillProgress}
+              onSpendCoins={onSpendCoins}
+              onToast={showToast}
+            />
+          )}
           {tab === "battle" && (
             <BattleScreen
-              ai={ai}
+              ai={aiWithSkills}
               seed={battleSeed}
               onReseed={() => setBattleSeed((s) => s + 1)}
               onToast={showToast}
@@ -316,6 +359,10 @@ async function ensureUserDoc(user) {
 // still renders so the user isn't stuck on the boot screen forever.
 function offlineFallbackState(user) {
   const dl = window.dataLayer;
+  const fallbackSkills = {};
+  (dl?.SKILL_DEFS || []).forEach((d) => {
+    fallbackSkills[d.id] = { id: d.id, level: 0, generation: 0, masteredAt: null };
+  });
   return {
     profile: {
       currency: { ...(dl ? dl.DEFAULT_CURRENCY : { coins: 0, gems: 0, rank: "BRONZE I" }) },
@@ -325,6 +372,7 @@ function offlineFallbackState(user) {
     },
     character: dl ? { ...dl.DEFAULT_CHARACTER } : { name: "ALBRT-7", class: "engineer", tier: "Bronze", generation: 1, trainingQueue: 0, stats: { speed: 50, stamina: 50, intelligence: 50, strength: 50 } },
     quests: dl ? dl.DEFAULT_QUESTS.map((q) => ({ ...q, status: "active", rewardClaimed: false })) : [],
+    skills: fallbackSkills,
   };
 }
 

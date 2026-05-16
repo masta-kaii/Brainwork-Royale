@@ -52,6 +52,14 @@ service cloud.firestore {
         // Quest completion is verified server-side — clients cannot self-grant rewards
         allow update, delete: if false;
       }
+
+      // Skills — owner-write for now (training is a coin sink, anti-cheat
+      // will move to Cloud Functions once the project is on Blaze).
+      match /skills/{docId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId);
+        allow delete: if isAdmin();
+      }
     }
 
     // ---------- /matches/{matchId} ----------

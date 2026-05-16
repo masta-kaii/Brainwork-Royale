@@ -49,6 +49,37 @@ const DEFAULT_QUESTS = [
     progress: 0, target: 3, unit: "wins", reward: 240, rewardLabel: "coins" },
 ];
 
+// ============================================================
+// SKILL CATALOG — the static definitions. Persisted state per
+// user lives at /users/{uid}/skills/{skillId}.
+// ============================================================
+const SKILL_DEFS = [
+  { id: "walk",   name: "Walk",   stat: "stamina",      anim: "Walk 01",          glyph: "▸",  blurb: "Smoother gait. +stamina." },
+  { id: "run",    name: "Run",    stat: "speed",        anim: "Run 01",           glyph: "»",  blurb: "Faster locomotion. +speed in battle." },
+  { id: "jump",   name: "Jump",   stat: "stamina",      anim: "Jump 01",          glyph: "↟",  blurb: "Recovers stamina. Will clear obstacles when those ship." },
+  { id: "dodge",  name: "Dodge",  stat: "speed",        anim: "Dodge 01",         glyph: "↪",  blurb: "Chance to nullify incoming damage." },
+  { id: "attack", name: "Attack", stat: "strength",     anim: "Attack 01",        glyph: "✦",  blurb: "Heavier hits. +strength." },
+  { id: "combo",  name: "Combo",  stat: "strength",     anim: "Combo Attack 01",  glyph: "⨯",  blurb: "Faster attack rhythm + extra strength." },
+];
+
+// Cumulative generation thresholds for each level.
+const LEVEL_GENS = [0, 50, 200, 500];   // L0, L1, L2, L3 (mastered)
+const MAX_LEVEL = 3;
+
+const TRAINING_PACKS = [
+  { id: "quick",    label: "Quick set",    cost: 100, gens: 50 },
+  { id: "session",  label: "Full session", cost: 350, gens: 200 },
+  { id: "marathon", label: "Marathon",     cost: 800, gens: 500 },
+];
+
+function levelForGens(gens) {
+  let lvl = 0;
+  for (let i = LEVEL_GENS.length - 1; i >= 0; i--) {
+    if (gens >= LEVEL_GENS[i]) { lvl = i; break; }
+  }
+  return lvl;
+}
+
 function fb() {
   if (!window.firebase) throw new Error("Firebase not ready");
   return window.firebase;
@@ -69,6 +100,14 @@ function questRef(uid, questId) {
 function questsCol(uid) {
   const f = fb();
   return f.collection(f.db, "users", uid, "quests");
+}
+function skillRef(uid, skillId) {
+  const f = fb();
+  return f.doc(f.db, "users", uid, "skills", skillId);
+}
+function skillsCol(uid) {
+  const f = fb();
+  return f.collection(f.db, "users", uid, "skills");
 }
 
 // ============================================================
@@ -113,10 +152,11 @@ async function seedFirstTimeUser(uid) {
 // ============================================================
 async function loadPlayerState(uid) {
   const f = fb();
-  const [uSnap, cSnap, qSnap] = await Promise.all([
+  const [uSnap, cSnap, qSnap, sSnap] = await Promise.all([
     f.getDoc(userRef(uid)),
     f.getDoc(characterRef(uid)),
     f.getDocs(questsCol(uid)),
+    f.getDocs(skillsCol(uid)),
   ]);
 
   const userData = uSnap.exists() ? uSnap.data() : {};
@@ -139,7 +179,22 @@ async function loadPlayerState(uid) {
     return stored ? { ...seed, ...stored, id: seed.id } : { ...seed, status: "active", rewardClaimed: false };
   });
 
-  return { profile, character, quests };
+  // Materialize skills as a map keyed by skill id; missing skills default to level 0
+  const skillMap = {};
+  sSnap.forEach((d) => { skillMap[d.id] = d.data(); });
+  const skills = {};
+  SKILL_DEFS.forEach((def) => {
+    const stored = skillMap[def.id];
+    const generation = stored?.generation || 0;
+    skills[def.id] = {
+      id: def.id,
+      level: stored?.level != null ? stored.level : levelForGens(generation),
+      generation,
+      masteredAt: stored?.masteredAt || null,
+    };
+  });
+
+  return { profile, character, quests, skills };
 }
 
 // ============================================================
@@ -211,10 +266,27 @@ async function setPlayerClass(uid, classId) {
 }
 
 // ============================================================
+// Persist a single skill after training. Idempotent — uses setDoc
+// with merge so create-or-update both work.
+// ============================================================
+async function saveSkill(uid, skillId, partial) {
+  try {
+    const f = fb();
+    await f.setDoc(skillRef(uid, skillId), {
+      id: skillId,
+      ...partial,
+      lastTrainedAt: f.serverTimestamp(),
+    }, { merge: true });
+  } catch (e) { warn(`saveSkill(${skillId})`, e); }
+}
+
+// ============================================================
 // Expose
 // ============================================================
 window.dataLayer = {
   DEFAULT_CHARACTER, DEFAULT_QUESTS, DEFAULT_CURRENCY,
+  SKILL_DEFS, LEVEL_GENS, MAX_LEVEL, TRAINING_PACKS,
+  levelForGens,
   seedFirstTimeUser,
   loadPlayerState,
   saveCurrency,
@@ -223,4 +295,5 @@ window.dataLayer = {
   updateQuestProgress,
   markQuestRewardClaimed,
   setPlayerClass,
+  saveSkill,
 };
