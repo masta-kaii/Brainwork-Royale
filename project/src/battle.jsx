@@ -15,7 +15,12 @@ function snapSim(sim) {
   }));
 }
 
-function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
+function BattleScreen({ ai, seed, mode = "battle", onReseed, onToast, onMatchComplete }) {
+  const isRace = mode === "race";
+  const labels = isRace
+    ? { live: "RACE", arena: "RACE TRACK", header: "Race", id: "R", treasure: "FIRST ACROSS LINE", lastAlive: "LAST RUNNER STANDING", queueNext: "↻ Queue next race", matchPrefix: "RACE" }
+    : { live: "LIVE",  arena: "NEON LAB",   header: "Battle", id: "M", treasure: "TREASURE SECURED", lastAlive: "LAST AI STANDING", queueNext: "↻ Queue next match", matchPrefix: "LIVE · Match" };
+
   const stageRef = React.useRef(null);
   const sceneRef = React.useRef(null);
   const simRef = React.useRef(null);
@@ -43,15 +48,16 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
     if (!stageRef.current) return;
 
     // sim
-    const sim = createBattleSim(seed, ai);
+    const sim = isRace ? createRaceSim(seed, ai) : createBattleSim(seed, ai);
     simRef.current = sim;
     completedRef.current = false;
 
     // rolling replay
     const replay = {
-      id: `M-${seed.toString().padStart(4, "0")}`,
+      id: `${labels.id}-${seed.toString().padStart(4, "0")}`,
       seed,
       startedAt: Date.now(),
+      mode,
       ai: { name: ai.name, class: ai.class, generation: ai.generation, tier: ai.tier },
       maze: sim.maze, treasure: sim.treasure,
       cols: sim.cols, rows: sim.rows,
@@ -63,7 +69,7 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
       events: sim.events,
       totalTicks: 0,
       winnerId: null,
-      mazeName: `NEON LAB #${seed.toString().padStart(4, "0")}`,
+      mazeName: `${labels.arena} #${seed.toString().padStart(4, "0")}`,
     };
     replayRef.current = replay;
 
@@ -79,7 +85,7 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
       sceneRef.current?.dispose();
       sceneRef.current = null;
     };
-  }, [seed, ai.class]);
+  }, [seed, ai.class, mode]);
 
   // Animation loop
   React.useEffect(() => {
@@ -147,8 +153,8 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
   return (
     <>
       <PageHeader
-        eyebrow={`LIVE · Match #${seed.toString().padStart(4, "0")} · Tier ${ai.tier}`}
-        title="Battle"
+        eyebrow={`${labels.live} · ${isRace ? "Race" : "Match"} #${seed.toString().padStart(4, "0")} · Tier ${ai.tier}`}
+        title={labels.header}
         meta={
           <>
             <span><span className="dot" />REAL-TIME · {fmtTime(elapsedSec)}</span>
@@ -180,7 +186,7 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
               <div className="battle-hud__top">
                 <span className="battle-hud__tag">
                   <span className="chip__dot" style={{ background: "var(--magenta)", animation: "pulse 1.4s infinite" }} />
-                  LIVE · NEON LAB · MAZE #{seed.toString().padStart(4, "0")}
+                  {labels.live} · {labels.arena} · {isRace ? "TRACK" : "MAZE"} #{seed.toString().padStart(4, "0")}
                 </span>
                 <span className="battle-hud__tag">
                   T+{fmtTime(elapsedSec)} · {aliveCount} ALIVE
@@ -190,12 +196,12 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
               {/* Live event ticker bottom */}
               <div className="live-ticker">
                 {recentEvents.map((e, i) => {
-                  const from = sim.agents[e.from];
+                  const from = e.from != null && e.from >= 0 ? sim.agents[e.from] : null;
                   const to = e.to != null ? sim.agents[e.to] : null;
                   return (
                     <div key={`${e.t}-${i}`} className="live-ticker__item" style={{ opacity: 1 - i * 0.3 }}>
                       <span className="mono tiny" style={{ color: "var(--ink-3)" }}>t{e.t}</span>
-                      {e.kind === "hit" && (
+                      {e.kind === "hit" && from && to && (
                         <>
                           <span style={{ color: from.color }}>{from.name}</span>
                           <span className="mono tiny" style={{ color: "var(--ink-2)" }}>hits</span>
@@ -203,20 +209,60 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
                           <span className="mono tiny" style={{ color: "var(--magenta)" }}>−{e.dmg}</span>
                         </>
                       )}
-                      {e.kind === "ko" && (
+                      {e.kind === "dodge" && from && to && (
                         <>
-                          <span style={{ color: from.color }}>{from.name}</span>
-                          <span className="mono tiny" style={{ color: "var(--magenta)" }}>knocked out</span>
                           <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--mint)" }}>dodges</span>
+                          <span style={{ color: from.color }}>{from.name}</span>
                         </>
                       )}
-                      {e.kind === "treasure" && (
+                      {e.kind === "spike" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--magenta)" }}>steps on spikes</span>
+                          <span className="mono tiny" style={{ color: "var(--magenta)" }}>−{e.dmg}</span>
+                        </>
+                      )}
+                      {e.kind === "boost" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--mint)" }}>boost pad</span>
+                        </>
+                      )}
+                      {e.kind === "slow" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--ink-2)" }}>stuck in slime</span>
+                        </>
+                      )}
+                      {e.kind === "jump" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--amber)" }}>uses jump pad</span>
+                        </>
+                      )}
+                      {e.kind === "ko" && to && (
+                        <>
+                          {from
+                            ? <>
+                                <span style={{ color: from.color }}>{from.name}</span>
+                                <span className="mono tiny" style={{ color: "var(--magenta)" }}>knocked out</span>
+                                <span style={{ color: to.color }}>{to.name}</span>
+                              </>
+                            : <>
+                                <span style={{ color: to.color }}>{to.name}</span>
+                                <span className="mono tiny" style={{ color: "var(--magenta)" }}>fell to the spikes</span>
+                              </>
+                          }
+                        </>
+                      )}
+                      {e.kind === "treasure" && from && (
                         <>
                           <span style={{ color: from.color }}>{from.name}</span>
                           <span className="mono tiny" style={{ color: "var(--amber)" }}>secured treasure</span>
                         </>
                       )}
-                      {e.kind === "last" && (
+                      {e.kind === "last" && from && (
                         <>
                           <span style={{ color: from.color }}>{from.name}</span>
                           <span className="mono tiny" style={{ color: "var(--mint)" }}>is the last AI standing</span>
@@ -241,8 +287,8 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
                 <div className="battle-overlay__panel">
                   <div className="mono tiny" style={{ color: "var(--mint)", letterSpacing: "0.2em" }}>
                     {sim.events[sim.events.length - 1]?.kind === "treasure"
-                      ? "TREASURE SECURED"
-                      : "LAST AI STANDING"}
+                      ? labels.treasure
+                      : labels.lastAlive}
                   </div>
                   <div className="overlay-winner">{winner.name}</div>
                   <div className="mono tiny" style={{ color: "var(--ink-2)", marginBottom: 16 }}>
@@ -255,7 +301,7 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
                   </div>
                   <div className="row" style={{ justifyContent: "center", gap: 8 }}>
                     <button className="btn btn--primary" onClick={() => onReseed()}>
-                      ↻ Queue next match
+                      {labels.queueNext}
                     </button>
                   </div>
                 </div>
@@ -269,7 +315,9 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
               <div className="card__label">Live leaderboard</div>
               <div style={{ display: "grid", gap: 4 }}>
                 {sim && [...sim.agents]
-                  .sort((a, b) => (b.alive - a.alive) || (b.hp - a.hp))
+                  .sort((a, b) => isRace
+                    ? (b.alive - a.alive) || (a.y - b.y)  // closer to top = lower y = better
+                    : (b.alive - a.alive) || (b.hp - a.hp))
                   .map((a, i) => (
                     <div
                       key={a.id}
@@ -318,8 +366,10 @@ function BattleScreen({ ai, seed, onReseed, onToast, onMatchComplete }) {
               </div>
               <div className="divider" />
               <div className="mono tiny" style={{ color: "var(--ink-3)", lineHeight: 1.5 }}>
-                Live battles play in real time — no fast-forward.
-                Study completed matches in <b style={{ color: "var(--mint)" }}>Replays</b> to see how your brain handled each tick.
+                {isRace
+                  ? "First across the line wins. Train Jump and Run skills before queuing — they help your AI clear obstacles fast."
+                  : "Live battles play in real time — no fast-forward."}
+                {" "}Study completed runs in <b style={{ color: "var(--mint)" }}>Replays</b> to see how your brain handled each tick.
               </div>
             </div>
           </div>

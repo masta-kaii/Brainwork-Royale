@@ -111,6 +111,53 @@ function createScene3D(container) {
   let currentReplay = null;
   let elapsed = 0;
 
+  // ---- Particle pool (sparks on hit / KO) ----
+  const particles = [];
+  const sparkGeo = new THREE.SphereGeometry(0.05, 6, 6);
+
+  function spawnSparks(x, y, z, count, colorHex, life = 0.6) {
+    for (let i = 0; i < count; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: colorHex, transparent: true, opacity: 0.95,
+      });
+      const m = new THREE.Mesh(sparkGeo, mat);
+      m.position.set(x, y, z);
+      const ang = Math.random() * Math.PI * 2;
+      const horiz = 0.4 + Math.random() * 1.4;
+      const up = 1.0 + Math.random() * 1.8;
+      particles.push({
+        mesh: m,
+        vx: Math.cos(ang) * horiz,
+        vy: up,
+        vz: Math.sin(ang) * horiz,
+        life: 0, maxLife: life * (0.7 + Math.random() * 0.5),
+        scale0: 0.8 + Math.random() * 0.6,
+      });
+      scene.add(m);
+    }
+  }
+
+  function updateParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life += dt;
+      if (p.life >= p.maxLife) {
+        scene.remove(p.mesh);
+        p.mesh.material.dispose();
+        particles.splice(i, 1);
+        continue;
+      }
+      const t = p.life / p.maxLife;
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.mesh.position.z += p.vz * dt;
+      p.vy -= 6.5 * dt; // gravity
+      p.mesh.material.opacity = 0.95 * (1 - t);
+      const s = p.scale0 * (1 - t * 0.5);
+      p.mesh.scale.set(s, s, s);
+    }
+  }
+
   // Pre-compute PEP base normalization (height + ground-offset) ONCE
   let pepBaseInfo = null;
   function getPepBaseInfo() {
@@ -208,6 +255,79 @@ function createScene3D(container) {
     topMesh.instanceMatrix.needsUpdate = true;
     scene.add(topMesh);
     mazeMeshes.push(topMesh);
+
+    // ---- Obstacles ----
+    // Per-type tile geometry sits flush on the floor. We dispose with
+    // the rest of the maze on the next setReplay().
+    const obs = maze.obstacles;
+    if (obs) {
+      // Pre-allocate per-type material so all tiles share one
+      const obstacleMats = {
+        spike: new THREE.MeshStandardMaterial({
+          color: 0x401015, emissive: 0xff3355, emissiveIntensity: 0.9,
+          roughness: 0.6, metalness: 0.3,
+        }),
+        speed: new THREE.MeshStandardMaterial({
+          color: 0x103a3a, emissive: 0x5df2d6, emissiveIntensity: 0.7,
+          roughness: 0.5, metalness: 0.3,
+        }),
+        slow: new THREE.MeshStandardMaterial({
+          color: 0x10203a, emissive: 0x4488ff, emissiveIntensity: 0.4,
+          roughness: 0.85, metalness: 0.1, transparent: true, opacity: 0.85,
+        }),
+        jump: new THREE.MeshStandardMaterial({
+          color: 0x3a2a10, emissive: 0xffb84d, emissiveIntensity: 0.7,
+          roughness: 0.5, metalness: 0.3,
+        }),
+      };
+      const tileGeo = new THREE.BoxGeometry(CELL * 0.85, 0.06, CELL * 0.85);
+      const spikeGeo = new THREE.ConeGeometry(0.08, 0.22, 5);
+      const arrowGeo = new THREE.BoxGeometry(CELL * 0.18, 0.04, CELL * 0.55);
+
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const o = obs[y][x];
+          if (!o) continue;
+          const mat = obstacleMats[o.type];
+          if (!mat) continue;
+          const tile = new THREE.Mesh(tileGeo, mat);
+          tile.position.set(x * CELL, 0.04, y * CELL);
+          tile.receiveShadow = true;
+          scene.add(tile);
+          mazeMeshes.push(tile);
+
+          // Per-type decoration on top of the tile
+          if (o.type === "spike") {
+            // Four small spikes
+            for (let i = 0; i < 4; i++) {
+              const spike = new THREE.Mesh(spikeGeo, mat);
+              const ang = (i / 4) * Math.PI * 2;
+              spike.position.set(x * CELL + Math.cos(ang) * 0.18, 0.16, y * CELL + Math.sin(ang) * 0.18);
+              spike.castShadow = true;
+              scene.add(spike);
+              mazeMeshes.push(spike);
+            }
+          } else if (o.type === "speed") {
+            // Arrow pointing in a random direction (decorative)
+            const arrow = new THREE.Mesh(arrowGeo, mat);
+            arrow.position.set(x * CELL, 0.09, y * CELL);
+            arrow.rotation.y = (((x * 7 + y * 13) % 4) * Math.PI) / 2;
+            scene.add(arrow);
+            mazeMeshes.push(arrow);
+          } else if (o.type === "jump") {
+            // Plus-shaped pad
+            const a1 = new THREE.Mesh(arrowGeo, mat);
+            a1.position.set(x * CELL, 0.09, y * CELL);
+            scene.add(a1);
+            const a2 = new THREE.Mesh(arrowGeo, mat);
+            a2.position.set(x * CELL, 0.09, y * CELL);
+            a2.rotation.y = Math.PI / 2;
+            scene.add(a2);
+            mazeMeshes.push(a1, a2);
+          }
+        }
+      }
+    }
 
     // Treasure
     treasureGroup = new THREE.Group();
@@ -353,6 +473,13 @@ function createScene3D(container) {
       curX: 0, curZ: 0, facing: 0, alive: true,
       _attackUntilTick: -1,
       _hitUntilTick: -1,
+      // Physics-feel state — knockback offset that decays per frame
+      knockX: 0, knockZ: 0,
+      // Track which jump and hit events we've already reacted to so
+      // we don't re-spawn sparks every frame inside the trigger window.
+      _lastJumpFromTick: -1,
+      _lastHitVfxTick: -1,
+      _wasAlive: true,
     };
   }
 
@@ -397,6 +524,9 @@ function createScene3D(container) {
   function setReplay(replay) {
     agentVisuals.forEach((v) => { scene.remove(v.group); disposeNode(v.group); });
     agentVisuals = [];
+    // Clear leftover particles from the previous match
+    particles.forEach((p) => { scene.remove(p.mesh); p.mesh.material.dispose(); });
+    particles.length = 0;
 
     currentReplay = replay;
     buildMaze({ grid: replay.maze.grid, cols: replay.cols, rows: replay.rows, treasure: replay.treasure });
@@ -437,28 +567,50 @@ function createScene3D(container) {
       const v = agentVisuals[i];
       const sCur = cur[i], sNxt = nxt[i];
 
-      // Position lerp
+      // Position lerp (cell-to-cell)
       const fx = sCur.x * CELL, fz = sCur.y * CELL;
       const tx = sNxt.x * CELL, tz = sNxt.y * CELL;
       v.curX = fx + (tx - fx) * fractional;
       v.curZ = fz + (tz - fz) * fractional;
-      v.group.position.x = v.curX;
-      v.group.position.z = v.curZ;
 
-      // Death — clamp pose + clip
+      // ---- Jump-pad parabolic arc ----
+      // When the cell delta between snaps is > 1, the agent was teleported
+      // by a jump pad in that tick. Render a parabolic Y so they visibly
+      // leap. Peak height scales with jump distance.
+      const cellDx = Math.abs(sNxt.x - sCur.x);
+      const cellDy = Math.abs(sNxt.y - sCur.y);
+      const cellDist = cellDx + cellDy;
+      let arcY = 0;
+      if (cellDist > 1 && sCur.alive && sNxt.alive) {
+        const arcHeight = 0.55 + cellDist * 0.18;
+        // f(t) = 4*h*t*(1-t) — parabola peaking at t=0.5
+        arcY = 4 * arcHeight * fractional * (1 - fractional);
+      }
+
+      // ---- Knockback decay ----
+      // Apply per-frame easing toward zero. ~250ms half-life.
+      v.knockX *= Math.max(0, 1 - dt * 6);
+      v.knockZ *= Math.max(0, 1 - dt * 6);
+
+      v.group.position.x = v.curX + v.knockX;
+      v.group.position.z = v.curZ + v.knockZ;
+      v.group.position.y = arcY;
+
+      // Death — clamp pose + clip + spark burst on the falling tick
       if (!sCur.alive) {
         v.group.position.y = 0;
         if (v.alive) {
-          // freshly killed
+          // freshly killed — death anim + dramatic burst
           playClip(v, "Death 01", 220, false, 1);
+          spawnSparks(v.curX, 0.55, v.curZ, 14, 0xff4d6d, 0.85);
         }
         v.alive = false;
+        v._wasAlive = false;
         v.hpSprite.visible = false;
         if (v.mixer) v.mixer.update(dt);
         return;
       }
       v.alive = true;
-      v.group.position.y = 0;
       v.hpSprite.visible = true;
 
       // Facing — physics-smooth turn
@@ -474,6 +626,20 @@ function createScene3D(container) {
 
       if (justAttacked) v._attackUntilTick = tn + 1;
       if (justHit) v._hitUntilTick = tn;
+
+      // ---- Hit VFX: knockback impulse + spark burst (fire once per hit) ----
+      if (justHit) {
+        const hitMarkerTick = sNxt.lastDamageAt;
+        if (hitMarkerTick !== v._lastHitVfxTick) {
+          v._lastHitVfxTick = hitMarkerTick;
+          // Knockback in the direction the defender was facing (they faced
+          // the attacker before the swing landed, so pushing back = -facing).
+          const impulse = 0.22;
+          v.knockX = -Math.sin(v.facing) * impulse;
+          v.knockZ = -Math.cos(v.facing) * impulse;
+          spawnSparks(v.curX, 0.65, v.curZ, 4, 0xff4d6d, 0.4);
+        }
+      }
 
       const attacking = tn <= v._attackUntilTick;
       const hitting = tn <= v._hitUntilTick;
@@ -501,6 +667,9 @@ function createScene3D(container) {
       if (v.mixer) v.mixer.update(dt);
     });
 
+    // Particle pool (sparks from hits, KOs, etc.)
+    updateParticles(dt);
+
     // Treasure animation
     if (treasureGroup) {
       const { diamond, ring, tlight } = treasureGroup.userData;
@@ -527,6 +696,10 @@ function createScene3D(container) {
     if (floorMesh) disposeNode(floorMesh);
     if (gridHelper) { gridHelper.geometry.dispose(); gridHelper.material.dispose(); }
     if (treasureGroup) disposeNode(treasureGroup);
+    // Particle cleanup
+    particles.forEach((p) => { scene.remove(p.mesh); p.mesh.material.dispose(); });
+    particles.length = 0;
+    sparkGeo.dispose();
     renderer.dispose();
     if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
   }
@@ -548,4 +721,208 @@ function createScene3D(container) {
   };
 }
 
-Object.assign(window, { createScene3D, parseColor, CELL_SIZE: CELL });
+// ============================================================
+// TRAINING SCENE — small open arena, single PEP-Smol agent
+// playing one animation clip. Used by the Training Center.
+// ============================================================
+function createTrainingScene(container, classId) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05060c);
+  scene.fog = new THREE.Fog(0x05060c, 8, 22);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  container.appendChild(renderer.domElement);
+  renderer.domElement.style.display = "block";
+  renderer.domElement.style.width = "100%";
+  renderer.domElement.style.height = "100%";
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 60);
+  function resize() {
+    const r = container.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return;
+    renderer.setSize(r.width, r.height, false);
+    camera.aspect = r.width / r.height;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  const ro = new ResizeObserver(resize);
+  ro.observe(container);
+
+  let controls = null;
+  if (window.OrbitControls) {
+    controls = new window.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.rotateSpeed = 0.85;
+    controls.zoomSpeed = 0.9;
+    controls.minDistance = 2.4;
+    controls.maxDistance = 9;
+    controls.maxPolarAngle = Math.PI * 0.49;
+    controls.minPolarAngle = Math.PI * 0.10;
+    controls.enablePan = false;
+    controls.target.set(0, 0.7, 0);
+  }
+
+  // Lights — match the battle scene aesthetic
+  scene.add(new THREE.AmbientLight(0x3a4060, 0.6));
+  const sun = new THREE.DirectionalLight(0xfff2dc, 1.0);
+  sun.position.set(4, 8, 3);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -6; sun.shadow.camera.right = 6;
+  sun.shadow.camera.top = 6; sun.shadow.camera.bottom = -6;
+  sun.shadow.bias = -0.0006;
+  scene.add(sun);
+  const accent = new THREE.PointLight(0x5df2d6, 1.4, 12);
+  accent.position.set(-2, 3, 2);
+  scene.add(accent);
+
+  // Arena floor + border
+  const FLOOR_R = 4;
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(FLOOR_R, 48),
+    new THREE.MeshStandardMaterial({ color: 0x0a0d1c, roughness: 0.95, metalness: 0.05 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  const grid = new THREE.GridHelper(FLOOR_R * 2, 16, 0x1f2a48, 0x1a2238);
+  grid.position.y = 0.01;
+  scene.add(grid);
+
+  // Progress ring on the ground — shows training-pack progress
+  const progRingGeo = new THREE.RingGeometry(FLOOR_R * 0.78, FLOOR_R * 0.86, 64, 1, -Math.PI / 2, Math.PI * 2);
+  const progRingMat = new THREE.MeshBasicMaterial({
+    color: 0x5df2d6, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+  });
+  const progRing = new THREE.Mesh(progRingGeo, progRingMat);
+  progRing.rotation.x = -Math.PI / 2;
+  progRing.position.y = 0.025;
+  scene.add(progRing);
+
+  // Spawn one PEP-Smol — duplicates the per-agent setup from makePepAgent
+  // (kept self-contained so the training scene has no dependency on a sim)
+  let model = null, mixer = null;
+  const actions = {};
+  const tintColor = parseColor((window.CLASSES?.[classId]?.color) || "#5df2d6");
+
+  function applyTint(o) {
+    if (!o.isMesh || !o.material) return;
+    const list = Array.isArray(o.material) ? o.material : [o.material];
+    const next = list.map((m) => {
+      const cm = m.clone();
+      cm._om_cloned = true;
+      if (cm.color && /hip|belly|chest|arm|forearm|leg|thigh|foot/i.test(cm.name || "")) {
+        cm.color.copy(cm.color.clone().multiply(tintColor).lerp(tintColor, 0.55));
+      }
+      if (cm.emissive) cm.emissiveIntensity = Math.min(cm.emissiveIntensity ?? 1, 0.5);
+      return cm;
+    });
+    o.material = Array.isArray(o.material) ? next : next[0];
+    o.castShadow = true;
+    o.receiveShadow = true;
+  }
+
+  if (window.PEP_BASE && !window.PEP_FAILED) {
+    const tmp = window.PEP_BASE.scene.clone(true);
+    const box = new THREE.Box3().setFromObject(tmp);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const targetH = 1.6;
+    const scale = targetH / Math.max(size.y, 0.1);
+    const groundOffset = -box.min.y * scale;
+    const cx = (box.min.x + box.max.x) / 2 * scale;
+    const cz = (box.min.z + box.max.z) / 2 * scale;
+
+    model = window.PEP_BASE.scene.clone(true);
+    model.scale.setScalar(scale);
+    model.position.set(-cx, groundOffset, -cz);
+    model.traverse(applyTint);
+    scene.add(model);
+
+    mixer = new THREE.AnimationMixer(model);
+    window.PEP_BASE.animations.forEach((clip) => {
+      actions[clip.name] = mixer.clipAction(clip);
+    });
+  } else {
+    // Capsule fallback if PEP failed to load
+    const f = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.22, 0.6, 6, 12),
+      new THREE.MeshStandardMaterial({ color: tintColor, roughness: 0.55 })
+    );
+    f.position.y = 0.7; f.castShadow = true;
+    scene.add(f);
+  }
+
+  // Position camera for a "TV close-up" framing
+  camera.position.set(2.6, 2.0, 3.4);
+  camera.lookAt(0, 0.8, 0);
+  if (controls) controls.update();
+
+  let currentName = null;
+  let currentAction = null;
+  function setSkill(clipName, speed = 1) {
+    if (!mixer) return;
+    const next = actions[clipName];
+    if (!next) return;
+    next.setEffectiveTimeScale(speed);
+    if (currentName === clipName) return;
+    next.reset();
+    next.setLoop(THREE.LoopRepeat, Infinity);
+    next.setEffectiveWeight(1);
+    next.play();
+    if (currentAction && currentAction !== next) {
+      currentAction.crossFadeTo(next, 0.28, false);
+    }
+    currentAction = next;
+    currentName = clipName;
+  }
+
+  function setSpeed(speed) {
+    if (currentAction) currentAction.setEffectiveTimeScale(speed);
+  }
+
+  let progress = 0; // 0..1
+  function setProgress(v) { progress = Math.max(0, Math.min(1, v)); }
+
+  let elapsed = 0;
+  function renderFrame(dt) {
+    elapsed += dt;
+    if (mixer) mixer.update(dt);
+
+    // Progress ring grows from a tiny arc to full as `progress` rises
+    const fullArc = Math.PI * 2;
+    const arc = Math.max(0.0001, progress * fullArc);
+    progRing.geometry.dispose();
+    progRing.geometry = new THREE.RingGeometry(FLOOR_R * 0.78, FLOOR_R * 0.86, 64, 1, -Math.PI / 2, arc);
+    progRing.material.opacity = 0.4 + Math.sin(elapsed * 4) * 0.15 + progress * 0.4;
+
+    accent.intensity = 1.2 + Math.sin(elapsed * 2.4) * 0.4;
+    if (controls) controls.update();
+    renderer.render(scene, camera);
+  }
+
+  function dispose() {
+    ro.disconnect();
+    if (controls) controls.dispose();
+    scene.traverse((o) => {
+      if (o.geometry) o.geometry.dispose?.();
+      if (o.material) {
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        list.forEach((m) => m.dispose?.());
+      }
+    });
+    renderer.dispose();
+    if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+  }
+
+  return { setSkill, setSpeed, setProgress, renderFrame, dispose, get controls() { return controls; } };
+}
+
+Object.assign(window, { createScene3D, createTrainingScene, parseColor, CELL_SIZE: CELL });
