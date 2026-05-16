@@ -867,7 +867,10 @@ function createTrainingScene(container, classId) {
 
   let currentName = null;
   let currentAction = null;
+  let baseSkill = null;          // The skill we're training on (returns here after stumble)
+  let stumbleUntil = 0;          // When > performance.now(), agent is mid-stumble
   function setSkill(clipName, speed = 1) {
+    baseSkill = { clipName, speed };
     if (!mixer) return;
     const next = actions[clipName];
     if (!next) return;
@@ -884,8 +887,66 @@ function createTrainingScene(container, classId) {
     currentName = clipName;
   }
 
+  // Force a clip change ignoring the baseSkill memo — used internally for stumble
+  function forceClip(clipName, speed = 1, loop = true) {
+    if (!mixer) return;
+    const next = actions[clipName];
+    if (!next) return;
+    next.reset();
+    next.setEffectiveTimeScale(speed);
+    next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+    next.setEffectiveWeight(1);
+    next.play();
+    if (currentAction && currentAction !== next) {
+      currentAction.crossFadeTo(next, 0.18, false);
+    }
+    currentAction = next;
+    currentName = clipName;
+  }
+
   function setSpeed(speed) {
     if (currentAction) currentAction.setEffectiveTimeScale(speed);
+    if (baseSkill) baseSkill.speed = speed;
+  }
+
+  // Spark particle pool — duplicated from createScene3D's pattern but
+  // scoped to the training arena so we can dispose cleanly on unmount.
+  const tParticles = [];
+  const tSparkGeo = new THREE.SphereGeometry(0.05, 6, 6);
+  function tSpawnSparks(x, y, z, count, colorHex, life = 0.5) {
+    for (let i = 0; i < count; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: colorHex, transparent: true, opacity: 0.95,
+      });
+      const m = new THREE.Mesh(tSparkGeo, mat);
+      m.position.set(x, y, z);
+      const ang = Math.random() * Math.PI * 2;
+      const horiz = 0.3 + Math.random() * 1.0;
+      const up = 0.8 + Math.random() * 1.4;
+      tParticles.push({
+        mesh: m,
+        vx: Math.cos(ang) * horiz,
+        vy: up,
+        vz: Math.sin(ang) * horiz,
+        life: 0,
+        maxLife: life * (0.7 + Math.random() * 0.5),
+        scale0: 0.7 + Math.random() * 0.5,
+      });
+      scene.add(m);
+    }
+  }
+
+  // markTrial — called by training.jsx after each simulated trial.
+  // success=true  → small mint puff (celebratory)
+  // success=false → crossfade to Get Hit for ~400 ms + red puff
+  function markTrial(success) {
+    if (success) {
+      tSpawnSparks(0, 0.4, 0, 5, 0x5df2d6, 0.5);
+    } else {
+      tSpawnSparks(0, 0.4, 0, 6, 0xff4d6d, 0.55);
+      stumbleUntil = performance.now() + 420;
+      forceClip("Get Hit 01", 1.2, false);
+    }
   }
 
   let progress = 0; // 0..1
@@ -896,6 +957,14 @@ function createTrainingScene(container, classId) {
     elapsed += dt;
     if (mixer) mixer.update(dt);
 
+    // Recover from a stumble: when the window ends, return to the base skill
+    if (stumbleUntil && performance.now() > stumbleUntil) {
+      stumbleUntil = 0;
+      if (baseSkill && baseSkill.clipName !== currentName) {
+        forceClip(baseSkill.clipName, baseSkill.speed, true);
+      }
+    }
+
     // Progress ring grows from a tiny arc to full as `progress` rises
     const fullArc = Math.PI * 2;
     const arc = Math.max(0.0001, progress * fullArc);
@@ -904,6 +973,27 @@ function createTrainingScene(container, classId) {
     progRing.material.opacity = 0.4 + Math.sin(elapsed * 4) * 0.15 + progress * 0.4;
 
     accent.intensity = 1.2 + Math.sin(elapsed * 2.4) * 0.4;
+
+    // Update training-scene particles
+    for (let i = tParticles.length - 1; i >= 0; i--) {
+      const p = tParticles[i];
+      p.life += dt;
+      if (p.life >= p.maxLife) {
+        scene.remove(p.mesh);
+        p.mesh.material.dispose();
+        tParticles.splice(i, 1);
+        continue;
+      }
+      const t = p.life / p.maxLife;
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.mesh.position.z += p.vz * dt;
+      p.vy -= 5.0 * dt;
+      p.mesh.material.opacity = 0.95 * (1 - t);
+      const s = p.scale0 * (1 - t * 0.5);
+      p.mesh.scale.set(s, s, s);
+    }
+
     if (controls) controls.update();
     renderer.render(scene, camera);
   }
@@ -911,6 +1001,9 @@ function createTrainingScene(container, classId) {
   function dispose() {
     ro.disconnect();
     if (controls) controls.dispose();
+    tParticles.forEach((p) => { scene.remove(p.mesh); p.mesh.material.dispose(); });
+    tParticles.length = 0;
+    tSparkGeo.dispose();
     scene.traverse((o) => {
       if (o.geometry) o.geometry.dispose?.();
       if (o.material) {
@@ -922,7 +1015,7 @@ function createTrainingScene(container, classId) {
     if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
   }
 
-  return { setSkill, setSpeed, setProgress, renderFrame, dispose, get controls() { return controls; } };
+  return { setSkill, setSpeed, setProgress, markTrial, renderFrame, dispose, get controls() { return controls; } };
 }
 
 Object.assign(window, { createScene3D, createTrainingScene, parseColor, CELL_SIZE: CELL });

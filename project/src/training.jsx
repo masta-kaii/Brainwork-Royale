@@ -1,13 +1,27 @@
 /* ============================================================
-   BRAINWORK ROYALE — TRAINING CENTER
-   AI Warehouse-style: pick a skill, spend coins to run more
-   "generations", watch the agent practice. Trained skill levels
-   feed into sim.jsx and actually change battle outcomes.
+   BRAINWORK ROYALE — TRAINING CENTER (live trial loop)
+   AI Warehouse-style: pick a skill, buy a session, watch the
+   agent attempt the skill in real time — succeed and stumble
+   in turn. Each trial advances the skill's generation count;
+   fitness gauge fills toward the next level threshold.
 
-   NOTE: the "generation count" is mocked for now — we don't run
-   real NEAT in the browser yet. The data layer is shaped so a
-   future round can plug in actual neataptic / TF.js training.
+   Notes
+   ----
+   - "Generations" are still simulated; this is a watchable
+     mockup, not real NEAT. Data layer is shaped so a future
+     round can plug in real neataptic / TF.js training.
+   - Trial outcomes drive both the data (gens) and the visuals
+     (clean anim vs. stumble cross-fade).
    ============================================================ */
+
+const TRIAL_MS = 600;                    // one trial every 600 ms
+const PACK_TRIAL_COUNT = { quick: 20, session: 80, marathon: 200 };
+
+function trialSuccessChance(level, progressTowardNext) {
+  // Base 35% chance, +18% per level, +up to 30% as we approach next-level
+  const p = 0.35 + (level || 0) * 0.18 + (progressTowardNext || 0) * 0.3;
+  return Math.max(0.05, Math.min(0.92, p));
+}
 
 function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoins, onToast }) {
   const SKILL_DEFS = window.dataLayer?.SKILL_DEFS || [];
@@ -16,14 +30,16 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
   const MAX_LEVEL = window.dataLayer?.MAX_LEVEL || 3;
 
   const [activeId, setActiveId] = React.useState(SKILL_DEFS[0]?.id || "walk");
-  const [training, setTraining] = React.useState(null); // { skillId, fromGens, toGens, startedAt, durationMs }
+  const [session, setSession] = React.useState(null); // { skillId, trialsRemaining, trialsTotal, gensEarned, packGens, startedAt }
+  const [trialLog, setTrialLog] = React.useState([]); // recent { ok, t }
+  const sessionRef = React.useRef(null);    // mirror of session for the interval handler
   const stageRef = React.useRef(null);
   const sceneRef = React.useRef(null);
 
   const activeDef = SKILL_DEFS.find((s) => s.id === activeId) || SKILL_DEFS[0];
   const activeSkill = skills?.[activeId] || { id: activeId, level: 0, generation: 0 };
 
-  // Build the 3D training scene once, swap animation when active skill changes.
+  // Build the 3D training scene once per AI class
   React.useEffect(() => {
     if (!stageRef.current) return;
     sceneRef.current = window.createTrainingScene(stageRef.current, ai.class);
@@ -45,63 +61,107 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
     };
   }, [ai.class]);
 
-  // Swap the practice animation when the selected skill changes
+  // Swap the practice animation when the selected skill changes (when not training)
   React.useEffect(() => {
     if (!sceneRef.current || !activeDef) return;
-    sceneRef.current.setSkill(activeDef.anim, 1.0);
-    sceneRef.current.setProgress(0);
-  }, [activeId, activeDef]);
+    if (!session) {
+      sceneRef.current.setSkill(activeDef.anim, 0.85);
+      sceneRef.current.setProgress(0);
+    }
+  }, [activeId, activeDef, session]);
 
-  // Drive the training animation (speed ramp + progress ring) while a pack is running
+  // Trial loop — runs while a session is active. Every TRIAL_MS, run one trial.
   React.useEffect(() => {
-    if (!training || !sceneRef.current) return;
-    let raf;
-    const startedAt = training.startedAt;
-    const tick = () => {
-      const now = performance.now();
-      const t = Math.min(1, (now - startedAt) / training.durationMs);
-      sceneRef.current?.setProgress(t);
-      // Speed ramps from 0.45x → 1.25x to feel like the AI gets better
-      sceneRef.current?.setSpeed(0.45 + t * 0.8);
-      if (t < 1) raf = requestAnimationFrame(tick);
-      else finishTraining();
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [training]);
+    if (!session) return;
+    sessionRef.current = session;
+    // Play the skill anim at a speed scaled by current level (sells "getting better")
+    const level = (skills?.[session.skillId]?.level || 0);
+    sceneRef.current?.setSkill(activeDef.anim, 0.55 + level * 0.22);
 
-  function finishTraining() {
-    if (!training) return;
-    const { skillId, fromGens, toGens } = training;
-    const newLevel = window.dataLayer.levelForGens(toGens);
+    const id = setInterval(() => {
+      const s = sessionRef.current;
+      if (!s) return;
+
+      // Compute progress toward next level for this skill's CURRENT state
+      const curSkill = skills?.[s.skillId] || { level: 0, generation: 0 };
+      const lvl = curSkill.level || 0;
+      const baseGens = LEVEL_GENS[lvl] || 0;
+      const nextGens = LEVEL_GENS[Math.min(lvl + 1, MAX_LEVEL)] || 9999;
+      const fromGens = (curSkill.generation || 0) + s.gensEarned;
+      const progressTowardNext = (fromGens - baseGens) / Math.max(1, nextGens - baseGens);
+      const chance = trialSuccessChance(lvl, progressTowardNext);
+
+      const ok = Math.random() < chance;
+      sceneRef.current?.markTrial(ok);
+
+      // Each success contributes +1 gen; failures still chip in 0.3.
+      const gensThisTrial = ok ? 1 : 0.3;
+      const newGensEarned = s.gensEarned + gensThisTrial;
+
+      // Update the gauge (fitness in [0..1] toward next-level threshold)
+      const totalGensNow = (curSkill.generation || 0) + newGensEarned;
+      const fitnessPct = Math.min(1, Math.max(0, (totalGensNow - baseGens) / Math.max(1, nextGens - baseGens)));
+      sceneRef.current?.setProgress(fitnessPct);
+
+      const remaining = s.trialsRemaining - 1;
+      const finished = remaining <= 0;
+
+      // Append to ticker (keep last 6)
+      setTrialLog((log) => [{ ok, t: Date.now() }, ...log].slice(0, 6));
+
+      // Update session state (and ref for next tick)
+      const nextSession = {
+        ...s,
+        trialsRemaining: remaining,
+        gensEarned: newGensEarned,
+      };
+      sessionRef.current = finished ? null : nextSession;
+      setSession(finished ? null : nextSession);
+
+      if (finished) {
+        clearInterval(id);
+        finalize(s.skillId, curSkill.generation || 0, newGensEarned);
+      }
+    }, TRIAL_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.startedAt]);
+
+  function finalize(skillId, fromGens, gensEarned) {
+    const newGens = Math.round(fromGens + gensEarned);
+    const newLevel = window.dataLayer.levelForGens(newGens);
     const oldLevel = window.dataLayer.levelForGens(fromGens);
-    onSkillProgress(skillId, { generation: toGens, level: newLevel, leveledUp: newLevel > oldLevel });
-    setTraining(null);
+    onSkillProgress(skillId, {
+      generation: newGens,
+      level: newLevel,
+      leveledUp: newLevel > oldLevel,
+    });
     if (sceneRef.current) {
       sceneRef.current.setProgress(0);
       sceneRef.current.setSpeed(1);
+      // Return to a clean idle posture between sessions
+      sceneRef.current.setSkill(activeDef.anim, 0.85);
     }
   }
 
   function buyPack(pack) {
-    if (training) return; // ignore during in-flight training
+    if (session) return; // ignore mid-session
     if (profile.currency.coins < pack.cost) {
       onToast(`⚠ Not enough coins · need ${pack.cost}, have ${profile.currency.coins}`);
       return;
     }
     onSpendCoins(pack.cost);
-    const fromGens = activeSkill.generation || 0;
-    const toGens = fromGens + pack.gens;
-    setTraining({
+    const trialsTotal = PACK_TRIAL_COUNT[pack.id] || 20;
+    setTrialLog([]);
+    setSession({
       skillId: activeId,
-      fromGens,
-      toGens,
+      trialsRemaining: trialsTotal,
+      trialsTotal,
+      gensEarned: 0,
+      packGens: pack.gens,
       startedAt: performance.now(),
-      // Visual duration: scaled by pack size, capped so big packs don't drag forever.
-      durationMs: Math.min(5500, 1500 + pack.gens * 8),
     });
-    onToast(`Training ${activeDef.name} · ${pack.gens} gens…`);
+    onToast(`Training ${activeDef.name} · ${trialsTotal} trials`);
   }
 
   const meta = (
@@ -110,6 +170,16 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
       <span>{profile.currency.coins.toLocaleString()} coins</span>
     </>
   );
+
+  // Live HUD values
+  const currentLvl = activeSkill.level || 0;
+  const baseGens = LEVEL_GENS[currentLvl] || 0;
+  const nextGens = LEVEL_GENS[Math.min(currentLvl + 1, MAX_LEVEL)] || 9999;
+  const liveGens = (activeSkill.generation || 0) + (session?.gensEarned || 0);
+  const livePct = currentLvl >= MAX_LEVEL ? 100
+    : Math.min(100, Math.max(0, ((liveGens - baseGens) / Math.max(1, nextGens - baseGens)) * 100));
+  const trialsLeft = session?.trialsRemaining ?? 0;
+  const trialsDone = session ? session.trialsTotal - session.trialsRemaining : 0;
 
   return (
     <>
@@ -151,7 +221,7 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
                   <div
                     key={def.id}
                     className={`skill-card ${isActive ? "is-active" : ""} ${mastered ? "is-mastered" : ""}`}
-                    onClick={() => setActiveId(def.id)}
+                    onClick={() => !session && setActiveId(def.id)}
                   >
                     <div className="skill-card__glyph">{def.glyph}</div>
                     <div className="skill-card__body">
@@ -174,9 +244,7 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
             </div>
 
             <div className="mono tiny" style={{ color: "var(--ink-3)", marginTop: 12, lineHeight: 1.5 }}>
-              Training simulations are illustrative. Real NEAT runs land
-              once the project moves to a build pipeline — your skill
-              levels carry over.
+              Each trial is a live attempt — successes ramp confidence, stumbles cost time. Train more to push past the next level threshold.
             </div>
           </div>
 
@@ -187,13 +255,43 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
 
               <div className="training-hud">
                 <div className="training-hud__tag">
-                  <span className="chip__dot" style={{ background: training ? "var(--mint)" : "var(--ink-3)", animation: training ? "pulse 1.4s infinite" : "none" }} />
-                  {training ? `TRAINING · ${activeDef.name.toUpperCase()}` : `READY · ${activeDef.name.toUpperCase()}`}
+                  <span className="chip__dot" style={{
+                    background: session ? "var(--mint)" : "var(--ink-3)",
+                    animation: session ? "pulse 1.4s infinite" : "none",
+                  }} />
+                  {session ? `LIVE TRAINING · ${activeDef.name.toUpperCase()}` : `READY · ${activeDef.name.toUpperCase()}`}
                 </div>
                 <div className="training-hud__tag">
-                  GEN {training ? Math.floor(training.fromGens + (training.toGens - training.fromGens) * ((performance.now() - training.startedAt) / training.durationMs)) : activeSkill.generation}
+                  GEN {Math.round(liveGens)}
                 </div>
               </div>
+
+              {/* Live trial ticker overlay on arena */}
+              {session && (
+                <div className="training-ticker">
+                  <div className="training-ticker__row">
+                    <span className="mono tiny" style={{ color: "var(--ink-2)" }}>
+                      TRIAL {trialsDone} / {session.trialsTotal}
+                    </span>
+                    <div className="training-ticker__chips">
+                      {trialLog.map((tr, i) => (
+                        <span
+                          key={i}
+                          className={`training-ticker__chip ${tr.ok ? "ok" : "fail"}`}
+                          style={{ opacity: 1 - i * 0.14 }}
+                          title={tr.ok ? "success" : "stumble"}
+                        >{tr.ok ? "✓" : "✗"}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="training-ticker__bar">
+                    <div className="training-ticker__bar-fill" style={{ width: `${livePct}%` }} />
+                  </div>
+                  <div className="mono tiny" style={{ color: "var(--ink-3)" }}>
+                    Fitness toward L{Math.min(currentLvl + 1, MAX_LEVEL)} · {Math.floor(livePct)}%
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="card" style={{ padding: 14 }}>
@@ -210,7 +308,7 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
               <div className="training-packs">
                 {TRAINING_PACKS.map((p) => {
                   const afford = profile.currency.coins >= p.cost;
-                  const disabled = !!training || !afford;
+                  const disabled = !!session || !afford;
                   return (
                     <button
                       key={p.id}
@@ -220,7 +318,7 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
                       title={!afford ? `Need ${p.cost - profile.currency.coins} more coins` : ""}
                     >
                       <div className="training-pack__label">{p.label}</div>
-                      <div className="training-pack__gens">+{p.gens} gens</div>
+                      <div className="training-pack__gens">{PACK_TRIAL_COUNT[p.id] || 20} trials</div>
                       <div className="training-pack__cost">◈ {p.cost}</div>
                     </button>
                   );

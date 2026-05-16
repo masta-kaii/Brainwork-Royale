@@ -228,7 +228,9 @@ function createBattleSim(seed, you, opts) {
     }
 
     const effectiveSpeed = c.stats.speed + speedBonus;
-    const moveCooldown = Math.max(2, Math.floor(20 - effectiveSpeed * 0.15));
+    // Cells advanced per tick (sim runs at 100 ms ticks). Tuned so default
+    // speed (50) yields ~2.5 cells/sec and max-trained Run gives ~3.7.
+    const speedPerTick = Math.max(0.08, effectiveSpeed * 0.005);
     const attackCooldownBase = Math.max(4, 8 - cdBonus);
 
     agents.push({
@@ -237,13 +239,14 @@ function createBattleSim(seed, you, opts) {
       cls,
       color: c.color,
       isYou: i === 0,
-      x: sx, y: sy,
+      x: sx, y: sy,                 // continuous floats
       prevX: sx, prevY: sy,
+      lastCellX: sx, lastCellY: sy, // for obstacle-on-entry detection
       hp: baseHp,
       maxHp: baseHp,
       alive: true,
-      cooldown: Math.floor(Math.random() * moveCooldown),
-      moveCooldown,
+      speedPerTick,
+      radius: 0.35,
       strength: c.stats.strength + strBonus,
       vision: 4 + Math.floor(c.stats.intelligence / 20),
       stamina: c.stats.stamina + stamBonus,
@@ -263,29 +266,33 @@ function createBattleSim(seed, you, opts) {
   let treasureGrabbed = false;
   const events = [];
 
+  // ---- Continuous-movement step ----
+  // Agents have float (x, y). Each tick they advance toward path[1] by
+  // their speed (cells/tick). Combat, treasure, and obstacles all use
+  // distance / floor-cell checks instead of integer equality. Sim runs
+  // ~10 ticks/sec (battle.jsx tunes TICK_MS); each tick is small so
+  // movement reads continuous to the renderer.
   function step() {
     if (winner) return;
     tick++;
 
     for (const a of agents) {
       if (!a.alive) continue;
-      a.cooldown--;
       a.attackCooldown = Math.max(0, a.attackCooldown - 1);
 
+      // Find nearest enemy (within vision)
       let nearestEnemy = null, nearestD = Infinity;
       for (const b of agents) {
         if (b === a || !b.alive) continue;
-        const d = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
         if (d < nearestD && d <= a.vision) { nearestD = d; nearestEnemy = b; }
       }
 
-      // adjacent combat
-      if (nearestEnemy && Math.abs(a.x - nearestEnemy.x) + Math.abs(a.y - nearestEnemy.y) === 1) {
-        // face enemy
+      // ---- Combat — engage when within striking range ----
+      if (nearestEnemy && nearestD < 1.2) {
         const dx = nearestEnemy.x - a.x, dy = nearestEnemy.y - a.y;
         a.facing = Math.atan2(dx, dy);
         if (a.attackCooldown === 0) {
-          // Dodge — defender's dodgeChance (0–40) gates the hit
           if (nearestEnemy.dodgeChance && Math.random() * 100 < nearestEnemy.dodgeChance) {
             a.attackCooldown = a.attackCooldownBase || 8;
             a.lastAttackAt = tick;
@@ -306,101 +313,106 @@ function createBattleSim(seed, you, opts) {
         continue;
       }
 
-      if (a.cooldown > 0) continue;
-      // Apply boost / slow modifiers (from speed pad / slow puddle)
-      let cd = a.moveCooldown;
-      if ((a.boostUntil || 0) > tick) cd = Math.max(1, Math.floor(cd / 2));
-      if ((a.slowUntil || 0) > tick)  cd = cd * 2;
-      a.cooldown = cd;
-
+      // ---- Pick a goal cell ----
       let goal;
       const aggressive = a.hp > a.maxHp * 0.35 && nearestEnemy && a.strength > 60;
       if (aggressive) {
-        goal = [nearestEnemy.x, nearestEnemy.y];
+        goal = [Math.floor(nearestEnemy.x), Math.floor(nearestEnemy.y)];
       } else if (a.hp < a.maxHp * 0.3 && nearestEnemy) {
         const dx = a.x - nearestEnemy.x, dy = a.y - nearestEnemy.y;
-        const gx = Math.max(1, Math.min(cols - 2, a.x + Math.sign(dx) * 4));
-        const gy = Math.max(1, Math.min(rows - 2, a.y + Math.sign(dy) * 4));
+        const gx = Math.max(1, Math.min(cols - 2, Math.floor(a.x) + Math.sign(dx) * 4));
+        const gy = Math.max(1, Math.min(rows - 2, Math.floor(a.y) + Math.sign(dy) * 4));
         goal = [gx, gy];
       } else {
         goal = treasure;
       }
 
-      if (!a.path || a.path.length < 2 || tick % 14 === 0) {
-        a.path = bfsPath(grid, cols, rows, [a.x, a.y], goal);
+      // ---- Refresh path from the agent's current cell ----
+      const cellX = Math.floor(a.x), cellY = Math.floor(a.y);
+      if (!a.path || a.path.length < 2 || tick % 12 === 0) {
+        a.path = bfsPath(grid, cols, rows, [cellX, cellY], goal);
       }
 
+      // ---- Advance toward the next waypoint ----
       if (a.path && a.path.length > 1) {
-        const [nx, ny] = a.path[1];
-        const blocked = agents.some((o) => o !== a && o.alive && o.x === nx && o.y === ny);
-        if (!blocked) {
-          a.prevX = a.x; a.prevY = a.y;
-          a.facing = Math.atan2(nx - a.x, ny - a.y);
-          a.x = nx; a.y = ny;
-          a.lastMoveTick = tick;
-          a.path.shift();
+        let stepDist = a.speedPerTick;
+        if ((a.boostUntil || 0) > tick) stepDist *= 2;
+        if ((a.slowUntil || 0)  > tick) stepDist *= 0.5;
 
-          // ---- Obstacle effect on the new cell ----
-          const ob = obstacles?.[a.y]?.[a.x];
-          if (ob) {
-            switch (ob.type) {
-              case OBSTACLE_TYPES.SPIKE: {
-                // Damage with a per-agent cooldown so they don't re-trigger
-                // every tick while stuck on the cell.
-                if ((a.lastSpikeAt || -100) < tick - 6) {
-                  const dmg = 8;
-                  a.hp -= dmg;
-                  a.lastSpikeAt = tick;
-                  a.lastDamageAt = tick;
-                  events.push({ t: tick, kind: "spike", to: a.id, dmg });
-                  if (a.hp <= 0) {
-                    a.alive = false;
-                    events.push({ t: tick, kind: "ko", from: -1, to: a.id });
-                  }
+        const [wx, wy] = a.path[1];
+        const dx = wx - a.x, dy = wy - a.y;
+        const dist = Math.hypot(dx, dy);
+        a.prevX = a.x; a.prevY = a.y;
+
+        if (dist <= stepDist) {
+          // Reached waypoint — snap + advance the path
+          a.x = wx; a.y = wy;
+          a.path.shift();
+        } else {
+          a.x += (dx / dist) * stepDist;
+          a.y += (dy / dist) * stepDist;
+        }
+        if (dx !== 0 || dy !== 0) a.facing = Math.atan2(dx, dy);
+        a.lastMoveTick = tick;
+      }
+
+      // ---- Obstacle effect when crossing into a new cell ----
+      const newCellX = Math.floor(a.x), newCellY = Math.floor(a.y);
+      if (newCellX !== a.lastCellX || newCellY !== a.lastCellY) {
+        a.lastCellX = newCellX;
+        a.lastCellY = newCellY;
+        const ob = obstacles?.[newCellY]?.[newCellX];
+        if (ob) {
+          switch (ob.type) {
+            case OBSTACLE_TYPES.SPIKE: {
+              if ((a.lastSpikeAt || -100) < tick - 10) {
+                const dmg = 8;
+                a.hp -= dmg;
+                a.lastSpikeAt = tick;
+                a.lastDamageAt = tick;
+                events.push({ t: tick, kind: "spike", to: a.id, dmg });
+                if (a.hp <= 0) {
+                  a.alive = false;
+                  events.push({ t: tick, kind: "ko", from: -1, to: a.id });
                 }
-                break;
               }
-              case OBSTACLE_TYPES.SPEED: {
-                a.boostUntil = tick + 4;
-                events.push({ t: tick, kind: "boost", to: a.id });
-                break;
+              break;
+            }
+            case OBSTACLE_TYPES.SPEED: {
+              a.boostUntil = tick + 12;
+              events.push({ t: tick, kind: "boost", to: a.id });
+              break;
+            }
+            case OBSTACLE_TYPES.SLOW: {
+              a.slowUntil = tick + 9;
+              events.push({ t: tick, kind: "slow", to: a.id });
+              break;
+            }
+            case OBSTACLE_TYPES.JUMP: {
+              const jumpDist = (a.isYou && (you.skills?.jump?.level || 0) >= 1) ? 3 : 2;
+              const fx = Math.round(Math.sin(a.facing));
+              const fy = Math.round(Math.cos(a.facing));
+              let landedX = newCellX, landedY = newCellY;
+              for (let s = 1; s <= jumpDist; s++) {
+                const tx = newCellX + fx * s, ty = newCellY + fy * s;
+                if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) break;
+                if (grid[ty][tx] === 1) break;
+                landedX = tx; landedY = ty;
               }
-              case OBSTACLE_TYPES.SLOW: {
-                a.slowUntil = tick + 3;
-                events.push({ t: tick, kind: "slow", to: a.id });
-                break;
+              if (landedX !== newCellX || landedY !== newCellY) {
+                a.x = landedX; a.y = landedY;
+                a.lastCellX = landedX; a.lastCellY = landedY;
+                a.path = null;
+                events.push({ t: tick, kind: "jump", to: a.id });
               }
-              case OBSTACLE_TYPES.JUMP: {
-                // Skip cells in current facing direction. Jump skill (only on
-                // player's agent) lets them clear an extra cell.
-                const jumpDist = (a.isYou && (you.skills?.jump?.level || 0) >= 1) ? 3 : 2;
-                // Round facing to nearest cardinal
-                const fx = Math.round(Math.sin(a.facing));
-                const fy = Math.round(Math.cos(a.facing));
-                let landedX = a.x, landedY = a.y;
-                for (let step = 1; step <= jumpDist; step++) {
-                  const tx = a.x + fx * step, ty = a.y + fy * step;
-                  if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) break;
-                  if (grid[ty][tx] === 1) break;
-                  const occupied = agents.some((o) => o !== a && o.alive && o.x === tx && o.y === ty);
-                  if (occupied) break;
-                  landedX = tx; landedY = ty;
-                }
-                if (landedX !== a.x || landedY !== a.y) {
-                  a.x = landedX; a.y = landedY;
-                  a.path = null;
-                  events.push({ t: tick, kind: "jump", to: a.id });
-                }
-                break;
-              }
+              break;
             }
           }
-        } else {
-          a.path = null;
         }
       }
 
-      if (a.x === treasure[0] && a.y === treasure[1] && !treasureGrabbed) {
+      // ---- Treasure / finish-line pickup (distance-based) ----
+      if (!treasureGrabbed && Math.hypot(a.x - treasure[0], a.y - treasure[1]) < 0.7) {
         treasureGrabbed = true;
         winner = a;
         events.push({ t: tick, kind: "treasure", from: a.id });

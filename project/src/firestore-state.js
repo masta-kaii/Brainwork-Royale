@@ -23,7 +23,9 @@
    is durability between sessions, not source-of-truth for the UI.
    ============================================================ */
 
-const DEFAULT_CURRENCY = { coins: 0, gems: 0, rank: "BRONZE I" };
+// New users get a starter wallet so they can try training immediately.
+// 2000 coins = 1 Quick set + 1 Full Session pack.
+const DEFAULT_CURRENCY = { coins: 2000, gems: 0, rank: "BRONZE I" };
 
 const DEFAULT_CHARACTER = {
   name: "ALBRT-7",

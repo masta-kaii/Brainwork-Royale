@@ -5,7 +5,8 @@
    record is emitted to app for saving + later study.
    ============================================================ */
 
-const TICK_MS = 320; // one sim tick every 320ms — feels alive but readable
+const TICK_MS = 100; // one sim tick every 100ms — continuous-feeling motion when
+                     //   combined with the float-position step loop in sim.jsx
 
 function snapSim(sim) {
   return sim.agents.map((a) => ({
