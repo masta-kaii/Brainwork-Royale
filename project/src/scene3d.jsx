@@ -1303,18 +1303,120 @@ function mountRagdollScene(container) {
   accent.position.set(-2, 3, 2);
   scene.add(accent);
 
-  // Training platform
-  const FLOOR_R = 3;
-  const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(FLOOR_R, 48),
-    new THREE.MeshStandardMaterial({ color: 0x0a0d1c, roughness: 0.95, metalness: 0.05 })
+  // ============================================================
+  // Solid training stage — raised platform + surrounding void floor.
+  // The physics ground (in brain-engine.makeWorld) is a big cuboid at
+  // y=-0.05; these are the VISIBLE meshes that sell "you're on a stage".
+  // ============================================================
+  const PLATFORM_R = 2.5;
+  const PLATFORM_H = 0.15;
+
+  // Void floor — large, dark, sits below platform level. Suggests "if
+  // you fall off, you go down forever" (visually only; physics ground
+  // catches them).
+  const voidFloor = new THREE.Mesh(
+    new THREE.CircleGeometry(8, 64),
+    new THREE.MeshStandardMaterial({ color: 0x05060c, roughness: 1.0, metalness: 0 })
   );
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-  const grid = new THREE.GridHelper(FLOOR_R * 2, 12, 0x1f2a48, 0x1a2238);
-  grid.position.y = 0.01;
+  voidFloor.rotation.x = -Math.PI / 2;
+  voidFloor.position.y = -0.3;
+  voidFloor.receiveShadow = true;
+  scene.add(voidFloor);
+
+  // Raised platform — actual training surface
+  const platform = new THREE.Mesh(
+    new THREE.CylinderGeometry(PLATFORM_R, PLATFORM_R, PLATFORM_H, 48),
+    new THREE.MeshStandardMaterial({
+      color: 0x1d2747, roughness: 0.75, metalness: 0.15,
+      emissive: 0x0d1430, emissiveIntensity: 0.4,
+    })
+  );
+  platform.position.y = PLATFORM_H / 2;
+  platform.receiveShadow = true;
+  platform.castShadow = true;
+  scene.add(platform);
+
+  // Glowing edge ring on top of the platform
+  const edge = new THREE.Mesh(
+    new THREE.RingGeometry(PLATFORM_R * 0.92, PLATFORM_R * 0.97, 64),
+    new THREE.MeshBasicMaterial({ color: 0x5df2d6, transparent: true, opacity: 0.65, side: THREE.DoubleSide })
+  );
+  edge.rotation.x = -Math.PI / 2;
+  edge.position.y = PLATFORM_H + 0.001;
+  scene.add(edge);
+
+  // Grid on the platform top so the surface reads as 3D
+  const grid = new THREE.GridHelper(PLATFORM_R * 2 * 0.95, 10, 0x2a3a5a, 0x1a2238);
+  grid.position.y = PLATFORM_H + 0.002;
   scene.add(grid);
+
+  // ============================================================
+  // PROP MESHES — generic geometry factory + lazy registry
+  // ============================================================
+  function _makePropMesh(spec) {
+    let geom;
+    const g = spec.geom || { type: "sphere", radius: 0.1 };
+    if (g.type === "sphere")        geom = new THREE.SphereGeometry(g.radius || 0.1, 16, 12);
+    else if (g.type === "box")      geom = new THREE.BoxGeometry(...(g.size || [0.2, 0.2, 0.2]).map((s) => s * 2));
+    else if (g.type === "cylinder") geom = new THREE.CylinderGeometry(g.radius || 0.1, g.radius || 0.1, g.height || 0.4, 16);
+    else if (g.type === "capsule")  geom = new THREE.CapsuleGeometry(g.radius || 0.1, (g.halfHeight || 0.2) * 2, 6, 12);
+    else                            geom = new THREE.SphereGeometry(0.1, 8, 6);
+    const mat = new THREE.MeshStandardMaterial({
+      color: spec.color != null ? spec.color : 0x9bf0e0,
+      emissive: spec.emissive != null ? spec.emissive : 0x000000,
+      emissiveIntensity: 0.4,
+      roughness: 0.45, metalness: 0.25,
+    });
+    const m = new THREE.Mesh(geom, mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  }
+
+  // Map of prop name -> { mesh, spec }
+  const propRegistry = new Map();
+  // Dynamic prop factory (set per-env, e.g. for debris). Receives a name,
+  // returns a visual spec or null. Falls back to a default debris mesh.
+  let dynamicPropFactory = null;
+
+  function setPropVisuals(propVisuals, dynamicFactory = null) {
+    // Clear previous
+    propRegistry.forEach(({ mesh }) => {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    });
+    propRegistry.clear();
+    dynamicPropFactory = dynamicFactory;
+    // Pre-create static props described in propVisuals
+    (propVisuals || []).forEach((spec) => {
+      const mesh = _makePropMesh(spec);
+      mesh.visible = false; // shows when first snapshot lands
+      scene.add(mesh);
+      propRegistry.set(spec.name, { mesh, spec });
+    });
+  }
+
+  function applyPropsSnapshot(propsMap) {
+    if (!propsMap) return;
+    for (const [name, transform] of Object.entries(propsMap)) {
+      let entry = propRegistry.get(name);
+      if (!entry) {
+        // Lazy-create from dynamic factory (e.g. debris in L3)
+        const spec = dynamicPropFactory
+          ? dynamicPropFactory(name)
+          : { name, geom: { type: "box", size: [0.13, 0.13, 0.13] }, color: 0x9bf0e0, emissive: 0x2a8a7a };
+        if (!spec) continue;
+        const mesh = _makePropMesh(spec);
+        scene.add(mesh);
+        entry = { mesh, spec };
+        propRegistry.set(name, entry);
+      }
+      entry.mesh.visible = true;
+      entry.mesh.position.set(transform.x, transform.y, transform.z);
+      entry.mesh.quaternion.set(transform.qx, transform.qy, transform.qz, transform.qw);
+    }
+  }
 
   // Visual: PEP-Smol character riding the physics torso. The model's
   // global position tracks the torso translation; its rotation copies
@@ -1469,8 +1571,18 @@ function mountRagdollScene(container) {
     if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
   }
 
+  function disposeProps() {
+    propRegistry.forEach(({ mesh }) => {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    });
+    propRegistry.clear();
+  }
+
   return {
     applySnapshot, setFallen, flashCue, renderFrame, dispose,
+    setPropVisuals, applyPropsSnapshot, disposeProps,
     get controls() { return controls; },
   };
 }

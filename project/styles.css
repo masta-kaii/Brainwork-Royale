@@ -1389,6 +1389,23 @@ body {
   height: fit-content;
 }
 
+.training-physics-tag {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: oklch(0 0 0 / 0.55);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  color: var(--ink-2);
+  letter-spacing: 0.12em;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  z-index: 4;
+}
+
 .skill-list {
   display: grid;
   gap: 8px;

@@ -219,13 +219,19 @@ function evalEnv(env, brain, opts = {}) {
   const { worldFactory = makeWorld, recordTrace = false } = opts;
   const world = worldFactory();
   const envState = env.build(world);
+  // Build static props (pendulums, anchors, etc.) once per episode.
+  // Stored on envState.props so envStep + snapshot can read them.
+  if (env.buildProps) {
+    envState.props = env.buildProps(world);
+  }
   const trace = recordTrace ? [env.snapshot(envState)] : null;
   let ticks = 0;
   let alive = true;
 
   while (ticks < env.maxTicks && alive) {
-    // 1. env-specific perturbation / scripted events
-    env.envStep(envState, ticks);
+    // 1. env-specific perturbation / scripted events — pass `world` so envs
+    //    can spawn dynamic props (e.g. falling debris in Balance L3)
+    env.envStep(envState, ticks, world);
     // 2. observe
     const obs = env.observe(envState);
     // 3. NN forward
