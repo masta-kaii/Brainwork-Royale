@@ -224,6 +224,12 @@ function ReplayViewer({ replay, onClose }) {
                           <span style={{ color: "var(--amber)" }}>↟ jump</span>
                         </>
                       )}
+                      {e.kind === "hurdle" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span style={{ color: "var(--amber)" }}>⫶ hurdle</span>
+                        </>
+                      )}
                       {e.kind === "ko" && to && (
                         <>
                           {from

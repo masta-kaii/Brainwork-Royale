@@ -44,6 +44,7 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
     if (!stageRef.current) return;
     sceneRef.current = window.createTrainingScene(stageRef.current, ai.class);
     sceneRef.current.setSkill("Idle 01", 1);
+    sceneRef.current.setSkillCourse?.(activeId);
 
     let raf;
     let last = performance.now();
@@ -59,11 +60,14 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
       sceneRef.current?.dispose();
       sceneRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ai.class]);
 
-  // Swap the practice animation when the selected skill changes (when not training)
+  // Swap the practice animation + course when the selected skill changes
   React.useEffect(() => {
     if (!sceneRef.current || !activeDef) return;
+    // Course rebuild is cheap and visually grounds the trial loop
+    sceneRef.current.setSkillCourse?.(activeId);
     if (!session) {
       sceneRef.current.setSkill(activeDef.anim, 0.85);
       sceneRef.current.setProgress(0);

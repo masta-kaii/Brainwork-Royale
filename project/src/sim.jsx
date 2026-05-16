@@ -8,10 +8,12 @@
 // Obstacle catalog — placed on otherwise-walkable cells. Replay
 // reads these straight off maze.obstacles so format is unchanged.
 const OBSTACLE_TYPES = {
-  SPIKE:  "spike",   // -8 hp on entry (cooldown per agent)
-  SPEED:  "speed",   // boost: half move cooldown for N ticks
-  SLOW:   "slow",    // 2x move cooldown for N ticks
-  JUMP:   "jump",    // skip cells in facing dir; Jump skill = farther
+  SPIKE:  "spike",    // -8 hp on entry (cooldown per agent)
+  SPEED:  "speed",    // boost: half move cooldown for N ticks
+  SLOW:   "slow",     // 2x move cooldown for N ticks
+  JUMP:   "jump",     // skip cells in facing dir; Jump skill = farther
+  HURDLE: "hurdle",   // race-style low bar — auto-clears 1 cell forward;
+                      //   Jump skill L1+ → 2 cells (faster crossing)
 };
 
 // ---------- Maze generation (recursive backtracker) ----------
@@ -174,12 +176,14 @@ function genRaceTrack(cols, rows, seed) {
       obstacles[y][x] = { type };
     }
   };
-  place(OBSTACLE_TYPES.SPIKE, Math.floor(rand() * 4) + 3); // 3–6
-  place(OBSTACLE_TYPES.JUMP,  Math.floor(rand() * 4) + 4); // 4–7
-  place(OBSTACLE_TYPES.SLOW,  Math.floor(rand() * 3) + 2); // 2–4
-  place(OBSTACLE_TYPES.SPEED, Math.floor(rand() * 4) + 4); // 4–7
+  // Race-flavoured obstacle mix — hurdles dominate, fewer punishing spikes
+  place(OBSTACLE_TYPES.HURDLE, Math.floor(rand() * 4) + 5); // 5–8 hurdles
+  place(OBSTACLE_TYPES.SPIKE,  Math.floor(rand() * 3) + 2); // 2–4 spikes
+  place(OBSTACLE_TYPES.JUMP,   Math.floor(rand() * 3) + 2); // 2–4 jump pads
+  place(OBSTACLE_TYPES.SLOW,   Math.floor(rand() * 3) + 2); // 2–4 slow puddles
+  place(OBSTACLE_TYPES.SPEED,  Math.floor(rand() * 4) + 4); // 4–7 speed pads
 
-  return { grid, cols, rows, treasure, obstacles };
+  return { grid, cols, rows, treasure, obstacles, isRace: true };
 }
 
 // ---------- Spawn pool helpers ----------
@@ -404,6 +408,28 @@ function createBattleSim(seed, you, opts) {
                 a.lastCellX = landedX; a.lastCellY = landedY;
                 a.path = null;
                 events.push({ t: tick, kind: "jump", to: a.id });
+              }
+              break;
+            }
+            case OBSTACLE_TYPES.HURDLE: {
+              // Auto-clear: agent skips 1 cell forward (2 if trained Jump).
+              // Difference from JUMP: smaller hop, no random "free 3-cell teleport"
+              // — feels like an athletic hurdle clearance in a race.
+              const hurdleDist = (a.isYou && (you.skills?.jump?.level || 0) >= 1) ? 2 : 1;
+              const fx = Math.round(Math.sin(a.facing));
+              const fy = Math.round(Math.cos(a.facing));
+              let landedX = newCellX, landedY = newCellY;
+              for (let s = 1; s <= hurdleDist; s++) {
+                const tx = newCellX + fx * s, ty = newCellY + fy * s;
+                if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) break;
+                if (grid[ty][tx] === 1) break;
+                landedX = tx; landedY = ty;
+              }
+              if (landedX !== newCellX || landedY !== newCellY) {
+                a.x = landedX; a.y = landedY;
+                a.lastCellX = landedX; a.lastCellY = landedY;
+                a.path = null;
+                events.push({ t: tick, kind: "hurdle", to: a.id });
               }
               break;
             }
