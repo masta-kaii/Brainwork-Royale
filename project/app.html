@@ -74,6 +74,23 @@
   <!-- Firebase SDK (modular v11, ESM). Loads before JSX so window.firebase is ready. -->
   <script type="module" src="src/firebase.js"></script>
 
+  <!-- Rapier3D physics (wasm-bundled compat build). Init is async; we
+       expose RAPIER on window after init and dispatch 'rapier-ready' so
+       any script that needs physics can wait for it. -->
+  <script type="module">
+    import RAPIER from 'https://esm.sh/@dimforge/[email protected]';
+    try {
+      await RAPIER.init();
+      window.RAPIER = RAPIER;
+      window.RAPIER_READY = true;
+    } catch (e) {
+      console.warn('Rapier init failed', e);
+      window.RAPIER_READY = true;     // fail-open so non-physics screens still render
+      window.RAPIER_FAILED = true;
+    }
+    window.dispatchEvent(new Event('rapier-ready'));
+  </script>
+
   <!-- Data layer (Firestore wrapper) — must come before any JSX that uses dataLayer.* -->
   <script type="text/babel" src="src/firestore-state.js"></script>
 
@@ -82,11 +99,13 @@
   <script type="text/babel" src="src/ui.jsx"></script>
   <script type="text/babel" src="src/sim.jsx"></script>
   <script type="text/babel" src="src/scene3d.jsx"></script>
+  <script type="text/babel" src="src/brain-engine.jsx"></script>
   <script type="text/babel" src="src/home.jsx"></script>
   <script type="text/babel" src="src/quests.jsx"></script>
   <script type="text/babel" src="src/battle.jsx"></script>
   <script type="text/babel" src="src/replays.jsx"></script>
   <script type="text/babel" src="src/brain.jsx"></script>
+  <script type="text/babel" src="src/balance-trainer.jsx"></script>
   <script type="text/babel" src="src/training.jsx"></script>
   <script type="text/babel" src="src/app.jsx"></script>
 </body>

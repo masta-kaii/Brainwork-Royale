@@ -62,6 +62,15 @@ service cloud.firestore {
         allow create, update: if isOwner(userId);
         allow delete: if isAdmin();
       }
+
+      // Brains — real NN weights from physics-based training. Owner-write
+      // for now; client-side training is local-only, no cheating surface.
+      // Schema: { schema, arch, weights: { w1, b1, w2, b2 }, meta, updatedAt }
+      match /brains/{key} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId);
+        allow delete: if isAdmin();
+      }
     }
 
     // ---------- /matches/{matchId} ----------

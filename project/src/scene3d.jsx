@@ -1241,4 +1241,168 @@ function createTrainingScene(container, classId) {
   };
 }
 
-Object.assign(window, { createScene3D, createTrainingScene, parseColor, CELL_SIZE: CELL });
+// ============================================================
+// RAGDOLL SCENE — used by the Balance training (Stage 0).
+// Renders 5 capsule meshes that mirror a Rapier ragdoll's body
+// transforms. The caller (balance-trainer.jsx) owns the Rapier
+// world and brain; this module only paints what the physics says.
+// ============================================================
+function mountRagdollScene(container) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05060c);
+  scene.fog = new THREE.Fog(0x05060c, 10, 28);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  container.appendChild(renderer.domElement);
+  renderer.domElement.style.display = "block";
+  renderer.domElement.style.width = "100%";
+  renderer.domElement.style.height = "100%";
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 60);
+  function resize() {
+    const r = container.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return;
+    renderer.setSize(r.width, r.height, false);
+    camera.aspect = r.width / r.height;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  const ro = new ResizeObserver(resize);
+  ro.observe(container);
+
+  let controls = null;
+  if (window.OrbitControls) {
+    controls = new window.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 2.0;
+    controls.maxDistance = 8.0;
+    controls.maxPolarAngle = Math.PI * 0.49;
+    controls.minPolarAngle = Math.PI * 0.10;
+    controls.enablePan = false;
+    controls.target.set(0, 0.9, 0);
+  }
+  camera.position.set(2.4, 1.6, 3.2);
+  camera.lookAt(0, 0.9, 0);
+
+  scene.add(new THREE.AmbientLight(0x3a4060, 0.55));
+  const sun = new THREE.DirectionalLight(0xfff2dc, 1.05);
+  sun.position.set(4, 8, 3); sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -6; sun.shadow.camera.right = 6;
+  sun.shadow.camera.top = 6; sun.shadow.camera.bottom = -6;
+  sun.shadow.bias = -0.0006;
+  scene.add(sun);
+  const accent = new THREE.PointLight(0x5df2d6, 1.2, 12);
+  accent.position.set(-2, 3, 2);
+  scene.add(accent);
+
+  // Training platform
+  const FLOOR_R = 3;
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(FLOOR_R, 48),
+    new THREE.MeshStandardMaterial({ color: 0x0a0d1c, roughness: 0.95, metalness: 0.05 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  const grid = new THREE.GridHelper(FLOOR_R * 2, 12, 0x1f2a48, 0x1a2238);
+  grid.position.y = 0.01;
+  scene.add(grid);
+
+  // Build 5 capsule meshes matching the ragdoll body sizes. They keep
+  // their geometry; we'll set position + quaternion from the physics snap.
+  function _cap(halfH, r, color = 0x9bf0e0, emissive = 0x2a8a7a) {
+    const m = new THREE.Mesh(
+      new THREE.CapsuleGeometry(r, halfH * 2, 6, 12),
+      new THREE.MeshStandardMaterial({
+        color, emissive, emissiveIntensity: 0.25,
+        roughness: 0.6, metalness: 0.2,
+      })
+    );
+    m.castShadow = true;
+    return m;
+  }
+
+  // Sizes match brain-engine.jsx createRagdoll
+  const meshes = {
+    torso:  _cap(0.30, 0.16, 0x9bf0e0, 0x2a8a7a),
+    lThigh: _cap(0.22, 0.10, 0xcdd2ee, 0x383d63),
+    rThigh: _cap(0.22, 0.10, 0xcdd2ee, 0x383d63),
+    lShin:  _cap(0.22, 0.09, 0xa3aad6, 0x2a3155),
+    rShin:  _cap(0.22, 0.09, 0xa3aad6, 0x2a3155),
+  };
+  Object.values(meshes).forEach((m) => scene.add(m));
+
+  // "Falling" tint helper — when a ragdoll has fallen we tint red briefly
+  let fallenSince = 0;
+
+  // Apply a single Rapier snapshot to the meshes. snap is the dict
+  // returned by brain-engine._snapshot(): { torso, lThigh, ... } each
+  // with { x, y, z, qx, qy, qz, qw }.
+  function applySnapshot(snap) {
+    for (const [name, m] of Object.entries(meshes)) {
+      const s = snap[name];
+      if (!s) continue;
+      m.position.set(s.x, s.y, s.z);
+      m.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+    }
+  }
+
+  // Set a tint for "alive" vs "fallen" so the user can see when an episode
+  // ends. Subtle red wash on all meshes when fallen.
+  function setFallen(fallen) {
+    const t = fallen ? 0.9 : 0.25;
+    Object.values(meshes).forEach((m) => {
+      if (fallen) m.material.emissive.set(0x8b2a2a);
+      else {
+        // Reset to per-mesh defaults
+        if (m === meshes.torso) m.material.emissive.set(0x2a8a7a);
+        else if (m === meshes.lThigh || m === meshes.rThigh) m.material.emissive.set(0x383d63);
+        else m.material.emissive.set(0x2a3155);
+      }
+      m.material.emissiveIntensity = t;
+    });
+    if (fallen && !fallenSince) fallenSince = performance.now();
+    if (!fallen) fallenSince = 0;
+  }
+
+  // Stage tag overlays
+  let elapsed = 0;
+  function renderFrame(dt) {
+    elapsed += dt;
+    accent.intensity = 1.0 + Math.sin(elapsed * 2.4) * 0.3;
+    if (controls) controls.update();
+    renderer.render(scene, camera);
+  }
+
+  function dispose() {
+    ro.disconnect();
+    if (controls) controls.dispose();
+    scene.traverse((o) => {
+      if (o.geometry) o.geometry.dispose?.();
+      if (o.material) {
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        list.forEach((m) => m.dispose?.());
+      }
+    });
+    renderer.dispose();
+    if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+  }
+
+  return {
+    applySnapshot, setFallen, renderFrame, dispose,
+    get controls() { return controls; },
+  };
+}
+
+Object.assign(window, {
+  createScene3D, createTrainingScene, mountRagdollScene,
+  parseColor, CELL_SIZE: CELL,
+});

@@ -23,13 +23,14 @@ function trialSuccessChance(level, progressTowardNext) {
   return Math.max(0.05, Math.min(0.92, p));
 }
 
-function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoins, onToast }) {
+function TrainingScreen({ uid, ai, skills, profile, brains, onSkillProgress, onSpendCoins, onToast, onBrainSaved }) {
   const SKILL_DEFS = window.dataLayer?.SKILL_DEFS || [];
   const LEVEL_GENS = window.dataLayer?.LEVEL_GENS || [0, 50, 200, 500];
   const TRAINING_PACKS = window.dataLayer?.TRAINING_PACKS || [];
   const MAX_LEVEL = window.dataLayer?.MAX_LEVEL || 3;
 
-  const [activeId, setActiveId] = React.useState(SKILL_DEFS[0]?.id || "walk");
+  const [activeId, setActiveId] = React.useState(SKILL_DEFS[0]?.id || "balance");
+  const activeIsReal = SKILL_DEFS.find((s) => s.id === activeId)?.isReal === true;
   const [session, setSession] = React.useState(null); // { skillId, trialsRemaining, trialsTotal, gensEarned, packGens, startedAt }
   const [trialLog, setTrialLog] = React.useState([]); // recent { ok, t }
   const sessionRef = React.useRef(null);    // mirror of session for the interval handler
@@ -39,9 +40,10 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
   const activeDef = SKILL_DEFS.find((s) => s.id === activeId) || SKILL_DEFS[0];
   const activeSkill = skills?.[activeId] || { id: activeId, level: 0, generation: 0 };
 
-  // Build the 3D training scene once per AI class
+  // Build the 3D training scene once per AI class — only for MOCK skills.
+  // Real-training skills (Balance) own their own scene via <BalanceTrainer/>.
   React.useEffect(() => {
-    if (!stageRef.current) return;
+    if (!stageRef.current || activeIsReal) return;
     sceneRef.current = window.createTrainingScene(stageRef.current, ai.class);
     sceneRef.current.setSkill("Idle 01", 1);
     sceneRef.current.setSkillCourse?.(activeId);
@@ -61,18 +63,17 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
       sceneRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ai.class]);
+  }, [ai.class, activeIsReal]);
 
   // Swap the practice animation + course when the selected skill changes
   React.useEffect(() => {
-    if (!sceneRef.current || !activeDef) return;
-    // Course rebuild is cheap and visually grounds the trial loop
+    if (activeIsReal || !sceneRef.current || !activeDef) return;
     sceneRef.current.setSkillCourse?.(activeId);
     if (!session) {
       sceneRef.current.setSkill(activeDef.anim, 0.85);
       sceneRef.current.setProgress(0);
     }
-  }, [activeId, activeDef, session]);
+  }, [activeId, activeDef, session, activeIsReal]);
 
   // Trial loop — runs while a session is active. Every TRIAL_MS, run one trial.
   React.useEffect(() => {
@@ -254,6 +255,16 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
 
           {/* RIGHT — arena + train controls */}
           <div className="training-main">
+            {activeIsReal ? (
+              <BalanceTrainer
+                uid={uid}
+                profile={profile}
+                brains={brains}
+                onSpendCoins={onSpendCoins}
+                onToast={onToast}
+                onBrainSaved={onBrainSaved}
+              />
+            ) : (<>
             <div className="training-stage">
               <div ref={stageRef} className="three-mount" />
 
@@ -329,6 +340,7 @@ function TrainingScreen({ uid, ai, skills, profile, onSkillProgress, onSpendCoin
                 })}
               </div>
             </div>
+            </>)}
           </div>
         </div>
       </div>

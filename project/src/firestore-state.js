@@ -56,6 +56,10 @@ const DEFAULT_QUESTS = [
 // user lives at /users/{uid}/skills/{skillId}.
 // ============================================================
 const SKILL_DEFS = [
+  // Balance is the first REAL training skill — actual neural-net evolves
+  // through ragdoll physics. Other six are still on the simulated trial
+  // loop until each gets its own physics environment.
+  { id: "balance", name: "Balance", stat: "stamina",     anim: "Idle 01",          glyph: "⊥",  blurb: "[REAL TRAINING] Ragdoll learns to stand. Brain weights persist + export.", isReal: true },
   { id: "walk",   name: "Walk",   stat: "stamina",      anim: "Walk 01",          glyph: "▸",  blurb: "Smoother gait. +stamina." },
   { id: "run",    name: "Run",    stat: "speed",        anim: "Run 01",           glyph: "»",  blurb: "Faster locomotion. +speed in battle." },
   { id: "jump",   name: "Jump",   stat: "stamina",      anim: "Jump 01",          glyph: "↟",  blurb: "Recovers stamina. Will clear obstacles when those ship." },
@@ -111,6 +115,14 @@ function skillsCol(uid) {
   const f = fb();
   return f.collection(f.db, "users", uid, "skills");
 }
+function brainRef(uid, key) {
+  const f = fb();
+  return f.doc(f.db, "users", uid, "brains", key);
+}
+function brainsCol(uid) {
+  const f = fb();
+  return f.collection(f.db, "users", uid, "brains");
+}
 
 // ============================================================
 // First-time setup. Idempotent: skips anything that already exists.
@@ -154,11 +166,12 @@ async function seedFirstTimeUser(uid) {
 // ============================================================
 async function loadPlayerState(uid) {
   const f = fb();
-  const [uSnap, cSnap, qSnap, sSnap] = await Promise.all([
+  const [uSnap, cSnap, qSnap, sSnap, bSnap] = await Promise.all([
     f.getDoc(userRef(uid)),
     f.getDoc(characterRef(uid)),
     f.getDocs(questsCol(uid)),
     f.getDocs(skillsCol(uid)),
+    f.getDocs(brainsCol(uid)),
   ]);
 
   const userData = uSnap.exists() ? uSnap.data() : {};
@@ -196,7 +209,11 @@ async function loadPlayerState(uid) {
     };
   });
 
-  return { profile, character, quests, skills };
+  // Brains — each doc is the portable brain JSON ({ schema, arch, weights, meta })
+  const brains = {};
+  bSnap.forEach((d) => { brains[d.id] = d.data(); });
+
+  return { profile, character, quests, skills, brains };
 }
 
 // ============================================================
@@ -282,6 +299,25 @@ async function saveSkill(uid, skillId, partial) {
   } catch (e) { warn(`saveSkill(${skillId})`, e); }
 }
 
+// ---- Brain weights (real NN, portable JSON) ----
+async function saveBrain(uid, key, brainJson) {
+  try {
+    const f = fb();
+    await f.setDoc(brainRef(uid, key), {
+      ...brainJson,
+      updatedAt: f.serverTimestamp(),
+    });
+  } catch (e) { warn(`saveBrain(${key})`, e); }
+}
+
+async function loadBrain(uid, key) {
+  try {
+    const f = fb();
+    const snap = await f.getDoc(brainRef(uid, key));
+    return snap.exists() ? snap.data() : null;
+  } catch (e) { warn(`loadBrain(${key})`, e); return null; }
+}
+
 // ============================================================
 // Expose
 // ============================================================
@@ -298,4 +334,6 @@ window.dataLayer = {
   markQuestRewardClaimed,
   setPlayerClass,
   saveSkill,
+  saveBrain,
+  loadBrain,
 };
