@@ -242,6 +242,12 @@ function BattleScreen({ ai, seed, mode = "battle", onReseed, onToast, onMatchCom
                           <span className="mono tiny" style={{ color: "var(--amber)" }}>uses jump pad</span>
                         </>
                       )}
+                      {e.kind === "hurdle" && to && (
+                        <>
+                          <span style={{ color: to.color }}>{to.name}</span>
+                          <span className="mono tiny" style={{ color: "var(--amber)" }}>clears a hurdle</span>
+                        </>
+                      )}
                       {e.kind === "ko" && to && (
                         <>
                           {from

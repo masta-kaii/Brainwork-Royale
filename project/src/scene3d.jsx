@@ -279,6 +279,10 @@ function createScene3D(container) {
           color: 0x3a2a10, emissive: 0xffb84d, emissiveIntensity: 0.7,
           roughness: 0.5, metalness: 0.3,
         }),
+        hurdle: new THREE.MeshStandardMaterial({
+          color: 0x35304d, emissive: 0xfff066, emissiveIntensity: 0.5,
+          roughness: 0.4, metalness: 0.4,
+        }),
       };
       const tileGeo = new THREE.BoxGeometry(CELL * 0.85, 0.06, CELL * 0.85);
       const spikeGeo = new THREE.ConeGeometry(0.08, 0.22, 5);
@@ -324,9 +328,64 @@ function createScene3D(container) {
             a2.rotation.y = Math.PI / 2;
             scene.add(a2);
             mazeMeshes.push(a1, a2);
+          } else if (o.type === "hurdle") {
+            // Two short posts + a horizontal bar — classic race hurdle.
+            // Bar is rotated to span perpendicular to the corridor's long axis
+            // (rows > cols ⇒ corridor runs along Z, so bar spans X).
+            const postGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.38, 8);
+            const barGeo = new THREE.BoxGeometry(CELL * 0.85, 0.04, 0.04);
+            const isRace = (rows > cols);  // race tracks are tall + narrow
+            const post1 = new THREE.Mesh(postGeo, mat);
+            const post2 = new THREE.Mesh(postGeo, mat);
+            const bar = new THREE.Mesh(barGeo, mat);
+            if (isRace) {
+              post1.position.set(x * CELL - 0.38, 0.19, y * CELL);
+              post2.position.set(x * CELL + 0.38, 0.19, y * CELL);
+              bar.position.set(x * CELL, 0.38, y * CELL);
+            } else {
+              post1.position.set(x * CELL, 0.19, y * CELL - 0.38);
+              post2.position.set(x * CELL, 0.19, y * CELL + 0.38);
+              bar.position.set(x * CELL, 0.38, y * CELL);
+              bar.rotation.y = Math.PI / 2;
+            }
+            [post1, post2, bar].forEach((m) => { m.castShadow = true; scene.add(m); mazeMeshes.push(m); });
           }
         }
       }
+    }
+
+    // ---- Race-mode props: starting blocks at the bottom + finish banner at top ----
+    if (maze.isRace) {
+      const startMat = new THREE.MeshStandardMaterial({
+        color: 0x10203a, emissive: 0x5df2d6, emissiveIntensity: 0.5,
+        roughness: 0.5, metalness: 0.4,
+      });
+      // Starting blocks across the spawn row
+      const startY = rows - 2;
+      for (let x = 1; x < cols - 1; x++) {
+        const block = new THREE.Mesh(
+          new THREE.BoxGeometry(CELL * 0.6, 0.08, CELL * 0.18),
+          startMat
+        );
+        block.position.set(x * CELL, 0.05, startY * CELL + 0.35);
+        block.receiveShadow = true;
+        scene.add(block); mazeMeshes.push(block);
+      }
+      // Finish-line banner at the top
+      const bannerMat = new THREE.MeshStandardMaterial({
+        color: 0xffb84d, emissive: 0xfff066, emissiveIntensity: 1.0,
+        roughness: 0.3, metalness: 0.4,
+      });
+      const pole1 = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.6, 8), bannerMat);
+      const pole2 = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.6, 8), bannerMat);
+      const banner = new THREE.Mesh(
+        new THREE.BoxGeometry((cols - 2) * CELL, 0.18, 0.05),
+        bannerMat
+      );
+      pole1.position.set(CELL, 0.8, CELL);
+      pole2.position.set((cols - 2) * CELL, 0.8, CELL);
+      banner.position.set((cols - 1) * CELL / 2, 1.5, CELL);
+      [pole1, pole2, banner].forEach((m) => { m.castShadow = true; scene.add(m); mazeMeshes.push(m); });
     }
 
     // Treasure
@@ -797,6 +856,161 @@ function createTrainingScene(container, classId) {
   grid.position.y = 0.01;
   scene.add(grid);
 
+  // ============================================================
+  // SKILL-SPECIFIC COURSES — ninja-warrior style obstacle layouts
+  // built into the arena floor. Each skill gets a distinct set of
+  // props so the user sees "what is being trained."
+  // ============================================================
+  let currentCourse = null;
+  let courseAnimators = []; // [(dt) => void] per-frame hooks
+
+  function disposeCourse() {
+    if (!currentCourse) return;
+    currentCourse.traverse((o) => {
+      if (o.geometry) o.geometry.dispose?.();
+      if (o.material) {
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        list.forEach((m) => m.dispose?.());
+      }
+    });
+    scene.remove(currentCourse);
+    currentCourse = null;
+    courseAnimators = [];
+  }
+
+  function emissiveMat(hex, intensity = 0.55, opacity = 1) {
+    return new THREE.MeshStandardMaterial({
+      color: hex, emissive: hex, emissiveIntensity: intensity,
+      roughness: 0.5, metalness: 0.25,
+      transparent: opacity < 1, opacity,
+    });
+  }
+
+  function buildCourse(skillId) {
+    disposeCourse();
+    const g = new THREE.Group();
+
+    if (skillId === "walk") {
+      // Zigzag chevrons on the floor — agent practices smooth gait
+      const mat = emissiveMat(0x5df2d6, 0.7);
+      for (let i = 0; i < 6; i++) {
+        const arrow = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.18), mat);
+        const z = -2.5 + i * 0.9;
+        const x = (i % 2 === 0 ? -1 : 1) * 0.8;
+        arrow.position.set(x, 0.04, z);
+        arrow.rotation.y = (i % 2 === 0 ? 1 : -1) * Math.PI / 5;
+        g.add(arrow);
+      }
+    }
+
+    else if (skillId === "run") {
+      // Sprint lane with chevrons + finish ribbon
+      const chevMat = emissiveMat(0xffb84d, 0.65);
+      for (let i = 0; i < 7; i++) {
+        const arrow1 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.12), chevMat);
+        const arrow2 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.12), chevMat);
+        const z = -2.7 + i * 0.8;
+        arrow1.position.set(-0.3, 0.04, z); arrow1.rotation.y = Math.PI / 6;
+        arrow2.position.set( 0.3, 0.04, z); arrow2.rotation.y = -Math.PI / 6;
+        g.add(arrow1, arrow2);
+      }
+      // Finish ribbon
+      const ribbon = new THREE.Mesh(
+        new THREE.BoxGeometry(2.4, 0.04, 0.05),
+        emissiveMat(0xfff066, 1.1)
+      );
+      ribbon.position.set(0, 1.4, 2.7);
+      g.add(ribbon);
+      const post1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.4, 8), emissiveMat(0xffb84d, 0.6));
+      post1.position.set(-1.2, 0.7, 2.7);
+      const post2 = post1.clone(); post2.position.x = 1.2;
+      g.add(post1, post2);
+    }
+
+    else if (skillId === "jump") {
+      // Two raised platforms with a glowing gap between — practice the leap
+      const platMat = emissiveMat(0xff9020, 0.45);
+      const platA = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 1.6), platMat);
+      platA.position.set(-1.4, 0.175, 0);
+      const platB = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 1.6), platMat);
+      platB.position.set(1.4, 0.175, 0);
+      g.add(platA, platB);
+      // Pit glow under the gap
+      const pit = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.04, 1.6),
+        emissiveMat(0xff4d6d, 1.0, 0.55)
+      );
+      pit.position.set(0, 0.02, 0);
+      g.add(pit);
+      // Side chevrons hinting the jump direction
+      const chMat = emissiveMat(0xff9020, 0.7);
+      for (let i = 0; i < 3; i++) {
+        const c = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.08), chMat);
+        c.position.set(-0.45 + i * 0.45, 0.06, 1.1);
+        c.rotation.y = -Math.PI / 6;
+        g.add(c);
+      }
+    }
+
+    else if (skillId === "dodge") {
+      // Three rotating poles to weave around
+      const poleMat = emissiveMat(0xa973ff, 0.5);
+      const armMat = emissiveMat(0xa973ff, 0.9);
+      const xs = [-1.6, 0, 1.6];
+      xs.forEach((x) => {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.8, 8), poleMat);
+        pole.position.set(x, 0.9, 0);
+        g.add(pole);
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.08), armMat);
+        arm.position.set(x, 1.2, 0);
+        g.add(arm);
+        // Animate rotation each frame
+        courseAnimators.push((dt, elapsed) => {
+          arm.rotation.y = elapsed * 1.2 + x;
+        });
+      });
+    }
+
+    else if (skillId === "attack") {
+      // Three target dummies (vertical capsules with a red "hit zone")
+      const bodyMat = emissiveMat(0x35304d, 0.2);
+      const hitMat = emissiveMat(0xff4d6d, 0.85);
+      const xs = [-1.5, 0, 1.5];
+      xs.forEach((x) => {
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.9, 4, 8), bodyMat);
+        body.position.set(x, 0.65, -0.4);
+        g.add(body);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 24), hitMat);
+        ring.position.set(x, 0.95, -0.4);
+        ring.rotation.x = Math.PI / 2;
+        g.add(ring);
+        // Subtle pulse on the hit ring
+        courseAnimators.push((dt, elapsed) => {
+          const s = 1 + Math.sin(elapsed * 3 + x) * 0.1;
+          ring.scale.setScalar(s);
+        });
+      });
+    }
+
+    else if (skillId === "combo") {
+      // Five small target spheres around the agent — sequence of hits
+      const targetMat = emissiveMat(0x5dd3f2, 0.95);
+      for (let i = 0; i < 5; i++) {
+        const ang = -Math.PI * 0.4 + (i / 4) * Math.PI * 0.8;
+        const r = 1.6;
+        const target = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), targetMat);
+        target.position.set(Math.sin(ang) * r, 0.9 + i * 0.08, Math.cos(ang) * r);
+        g.add(target);
+        courseAnimators.push((dt, elapsed) => {
+          target.position.y = (0.9 + i * 0.08) + Math.sin(elapsed * 2 + i) * 0.08;
+        });
+      }
+    }
+
+    scene.add(g);
+    currentCourse = g;
+  }
+
   // Progress ring on the ground — shows training-pack progress
   const progRingGeo = new THREE.RingGeometry(FLOOR_R * 0.78, FLOOR_R * 0.86, 64, 1, -Math.PI / 2, Math.PI * 2);
   const progRingMat = new THREE.MeshBasicMaterial({
@@ -974,6 +1188,9 @@ function createTrainingScene(container, classId) {
 
     accent.intensity = 1.2 + Math.sin(elapsed * 2.4) * 0.4;
 
+    // Per-frame course animation (rotating poles, target pulses, etc.)
+    for (let i = 0; i < courseAnimators.length; i++) courseAnimators[i](dt, elapsed);
+
     // Update training-scene particles
     for (let i = tParticles.length - 1; i >= 0; i--) {
       const p = tParticles[i];
@@ -1004,6 +1221,7 @@ function createTrainingScene(container, classId) {
     tParticles.forEach((p) => { scene.remove(p.mesh); p.mesh.material.dispose(); });
     tParticles.length = 0;
     tSparkGeo.dispose();
+    disposeCourse();
     scene.traverse((o) => {
       if (o.geometry) o.geometry.dispose?.();
       if (o.material) {
@@ -1015,7 +1233,12 @@ function createTrainingScene(container, classId) {
     if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
   }
 
-  return { setSkill, setSpeed, setProgress, markTrial, renderFrame, dispose, get controls() { return controls; } };
+  return {
+    setSkill, setSpeed, setProgress, markTrial,
+    setSkillCourse: buildCourse,
+    renderFrame, dispose,
+    get controls() { return controls; },
+  };
 }
 
 Object.assign(window, { createScene3D, createTrainingScene, parseColor, CELL_SIZE: CELL });
