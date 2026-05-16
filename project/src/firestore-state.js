@@ -28,7 +28,7 @@
 const DEFAULT_CURRENCY = { coins: 2000, gems: 0, rank: "BRONZE I" };
 
 const DEFAULT_CHARACTER = {
-  name: "ALBRT-7",
+  name: "Berok 1",
   class: "engineer",
   tier: "Bronze",
   generation: 1,

@@ -1316,61 +1316,100 @@ function mountRagdollScene(container) {
   grid.position.y = 0.01;
   scene.add(grid);
 
-  // Build 5 capsule meshes matching the ragdoll body sizes. They keep
-  // their geometry; we'll set position + quaternion from the physics snap.
-  function _cap(halfH, r, color = 0x9bf0e0, emissive = 0x2a8a7a) {
-    const m = new THREE.Mesh(
-      new THREE.CapsuleGeometry(r, halfH * 2, 6, 12),
-      new THREE.MeshStandardMaterial({
-        color, emissive, emissiveIntensity: 0.25,
-        roughness: 0.6, metalness: 0.2,
-      })
-    );
-    m.castShadow = true;
-    return m;
-  }
+  // Visual: PEP-Smol character riding the physics torso. The model's
+  // global position tracks the torso translation; its rotation copies
+  // the torso so you see the AI's tilt as it loses balance. Death anim
+  // plays when setFallen(true). Limbs don't articulate independently
+  // with the physics joints — that would need bone-driving (future
+  // work). For balance training the body-level tilt is enough.
+  let pepModel = null;
+  let pepMixer = null;
+  const pepActions = {};
+  let pepGroundOffset = 0;
+  let pepCx = 0, pepCz = 0;
+  let currentAnim = null;
+  let currentAction = null;
 
-  // Sizes match brain-engine.jsx createRagdoll
-  const meshes = {
-    torso:  _cap(0.30, 0.16, 0x9bf0e0, 0x2a8a7a),
-    lThigh: _cap(0.22, 0.10, 0xcdd2ee, 0x383d63),
-    rThigh: _cap(0.22, 0.10, 0xcdd2ee, 0x383d63),
-    lShin:  _cap(0.22, 0.09, 0xa3aad6, 0x2a3155),
-    rShin:  _cap(0.22, 0.09, 0xa3aad6, 0x2a3155),
-  };
-  Object.values(meshes).forEach((m) => scene.add(m));
-
-  // "Falling" tint helper — when a ragdoll has fallen we tint red briefly
-  let fallenSince = 0;
-
-  // Apply a single Rapier snapshot to the meshes. snap is the dict
-  // returned by brain-engine._snapshot(): { torso, lThigh, ... } each
-  // with { x, y, z, qx, qy, qz, qw }.
-  function applySnapshot(snap) {
-    for (const [name, m] of Object.entries(meshes)) {
-      const s = snap[name];
-      if (!s) continue;
-      m.position.set(s.x, s.y, s.z);
-      m.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+  function playClip(name, fadeS = 0.25, loop = true) {
+    if (!pepMixer) return;
+    const next = pepActions[name];
+    if (!next) return;
+    if (currentAnim === name) return;
+    next.reset();
+    next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+    next.clampWhenFinished = !loop;
+    next.setEffectiveWeight(1);
+    next.setEffectiveTimeScale(1);
+    next.play();
+    if (currentAction && currentAction !== next) {
+      currentAction.crossFadeTo(next, fadeS, false);
     }
+    currentAction = next;
+    currentAnim = name;
   }
 
-  // Set a tint for "alive" vs "fallen" so the user can see when an episode
-  // ends. Subtle red wash on all meshes when fallen.
-  function setFallen(fallen) {
-    const t = fallen ? 0.9 : 0.25;
-    Object.values(meshes).forEach((m) => {
-      if (fallen) m.material.emissive.set(0x8b2a2a);
-      else {
-        // Reset to per-mesh defaults
-        if (m === meshes.torso) m.material.emissive.set(0x2a8a7a);
-        else if (m === meshes.lThigh || m === meshes.rThigh) m.material.emissive.set(0x383d63);
-        else m.material.emissive.set(0x2a3155);
+  // Build the PEP-Smol model from the pre-loaded GLTF. Fall back to a
+  // single torso capsule if the asset isn't available.
+  if (window.PEP_BASE && !window.PEP_FAILED) {
+    const tmp = window.PEP_BASE.scene.clone(true);
+    const box = new THREE.Box3().setFromObject(tmp);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const targetH = 1.7;                                   // close to the physics ragdoll height
+    const scale = targetH / Math.max(size.y, 0.1);
+    pepGroundOffset = -box.min.y * scale;
+    pepCx = (box.min.x + box.max.x) / 2 * scale;
+    pepCz = (box.min.z + box.max.z) / 2 * scale;
+
+    pepModel = window.PEP_BASE.scene.clone(true);
+    pepModel.scale.setScalar(scale);
+    pepModel.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
       }
-      m.material.emissiveIntensity = t;
     });
-    if (fallen && !fallenSince) fallenSince = performance.now();
-    if (!fallen) fallenSince = 0;
+    scene.add(pepModel);
+
+    pepMixer = new THREE.AnimationMixer(pepModel);
+    window.PEP_BASE.animations.forEach((clip) => {
+      pepActions[clip.name] = pepMixer.clipAction(clip);
+    });
+    playClip("Idle 01", 0, true);
+  } else {
+    // Fallback: simple capsule so something still renders if PEP failed
+    pepModel = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.18, 1.0, 6, 12),
+      new THREE.MeshStandardMaterial({ color: 0x9bf0e0, roughness: 0.6 })
+    );
+    pepModel.position.y = 0.7;
+    pepModel.castShadow = true;
+    scene.add(pepModel);
+  }
+
+  // Apply a single Rapier snapshot. snap.bodies.torso drives where the
+  // model is rendered.
+  function applySnapshot(snap) {
+    const bodies = (snap && snap.bodies) || snap;
+    const torso = bodies?.torso;
+    if (!torso || !pepModel) return;
+    // Position: ride the torso, but project feet to roughly ground level
+    pepModel.position.set(
+      torso.x - pepCx,
+      Math.max(0, torso.y - 0.9) + (pepGroundOffset || 0),  // 0.9 ≈ half ragdoll height
+      torso.z - pepCz
+    );
+    // Rotation: copy torso so the model tilts as balance is lost
+    pepModel.quaternion.set(torso.qx, torso.qy, torso.qz, torso.qw);
+  }
+
+  function setFallen(fallen) {
+    if (!pepMixer) return;
+    if (fallen) playClip("Death 01", 0.2, false);
+    else        playClip("Idle 01",  0.3, true);
+  }
+
+  function updateMixer(dt) {
+    if (pepMixer) pepMixer.update(dt);
   }
 
   // Transient perturbation-cue marker (arrow that briefly appears at the
@@ -1405,6 +1444,7 @@ function mountRagdollScene(container) {
   function renderFrame(dt) {
     elapsed += dt;
     accent.intensity = 1.0 + Math.sin(elapsed * 2.4) * 0.3;
+    updateMixer(dt);
     // Cue fade
     if (cueExpiresAt) {
       const remaining = (cueExpiresAt - performance.now()) / 240;

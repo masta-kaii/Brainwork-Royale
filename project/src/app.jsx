@@ -402,7 +402,7 @@ function offlineFallbackState(user) {
       displayName: user.displayName || (user.email || "").split("@")[0] || "warden",
       email: user.email || "",
     },
-    character: dl ? { ...dl.DEFAULT_CHARACTER } : { name: "ALBRT-7", class: "engineer", tier: "Bronze", generation: 1, trainingQueue: 0, stats: { speed: 50, stamina: 50, intelligence: 50, strength: 50 } },
+    character: dl ? { ...dl.DEFAULT_CHARACTER } : { name: "Berok 1", class: "engineer", tier: "Bronze", generation: 1, trainingQueue: 0, stats: { speed: 50, stamina: 50, intelligence: 50, strength: 50 } },
     quests: dl ? dl.DEFAULT_QUESTS.map((q) => ({ ...q, status: "active", rewardClaimed: false })) : [],
     skills: fallbackSkills,
     brains: {},
