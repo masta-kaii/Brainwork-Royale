@@ -814,6 +814,9 @@
             </div>
             <button type="submit" class="btn btn--primary btn--block">Sign in &nbsp;→</button>
             <div class="login-card__foot">New warden? <a data-modal="signup">Create an account →</a></div>
+            <div class="login-card__foot" style="margin-top:6px">
+              Just browsing? <a id="guestBtn" style="cursor:pointer">Try as guest →</a>
+            </div>
           </form>
         </div>
       </div>
@@ -1570,6 +1573,29 @@ async function doGoogleSignIn() {
   } catch (e) { showToast('⚠ ' + friendlyAuthError(e.code)); }
 }
 
+async function doGuestSignIn() {
+  try {
+    showToast('Spinning up a guest session…');
+    const cred = await window.firebase.signInAnon();
+    // Anonymous users have no email/displayName — synthesize a handle from their uid
+    const handle = 'Guest-' + cred.user.uid.slice(0, 6);
+    const { db, doc, getDoc, setDoc, serverTimestamp } = window.firebase;
+    const ref = doc(db, 'users', cred.user.uid);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        role: 'player',
+        email: '',
+        displayName: handle,
+        isAnonymous: true,
+        createdAt: serverTimestamp(),
+      });
+    }
+    showToast('Welcome ' + handle + ' · entering deck…');
+    setTimeout(() => { location.href = 'app.html'; }, 600);
+  } catch (e) { showToast('⚠ ' + friendlyAuthError(e.code)); }
+}
+
 document.getElementById('loginForm').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   whenFirebaseReady(async () => {
@@ -1590,6 +1616,8 @@ whenFirebaseReady(() => {
     provs[1].style.opacity = '0.45';
     provs[1].addEventListener('click', () => showToast('Apple sign-in not enabled yet'));
   }
+  const guest = document.getElementById('guestBtn');
+  if (guest) guest.addEventListener('click', doGuestSignIn);
 });
 
 /* ============================================================

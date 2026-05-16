@@ -30,6 +30,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInAnonymously,
   GoogleAuthProvider,
   signOut,
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
@@ -94,6 +95,7 @@ window.firebase = {
   signInEmail: (email, password) => signInWithEmailAndPassword(auth, email, password),
   signUpEmail: (email, password) => createUserWithEmailAndPassword(auth, email, password),
   signInGoogle: () => signInWithPopup(auth, new GoogleAuthProvider()),
+  signInAnon: () => signInAnonymously(auth),
   signOut: () => signOut(auth),
 
   // Firestore primitives — pass through so the JSX code can compose queries

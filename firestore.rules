@@ -27,10 +27,12 @@ service cloud.firestore {
       // Players bootstrap their own doc on signup
       allow create: if isOwner(userId)
         && request.resource.data.role == 'player';
-      // Players can update their own doc but cannot promote themselves
-      // and cannot tamper with stats / currency (those go through Functions)
+      // Players can update their own doc but cannot promote themselves.
+      // NOTE: currency + stats are owner-writable until the project moves
+      // to Blaze and Cloud Functions can mediate them. This is the anti-cheat
+      // surface we explicitly accept on the free tier.
       allow update: if isOwner(userId)
-        && didNotChange(['role', 'stats', 'currency', 'createdAt']);
+        && didNotChange(['role', 'createdAt']);
       allow delete: if isAdmin();
 
       // ----- subcollections -----

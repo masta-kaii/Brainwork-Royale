@@ -37,14 +37,28 @@ function App({ user, initialState }) {
   const aiWithSkills = useMemo(() => ({ ...ai, skills }), [ai, skills]);
 
   // Composite "player" object used by HomeScreen + rail
-  const player = useMemo(() => ({
-    uid,
-    email: user.email,
-    handle: profile.displayName || user.displayName || (user.email ? user.email.split("@")[0] : "warden"),
-    rank: profile.currency.rank,
-    coins: profile.currency.coins,
-    gems: profile.currency.gems,
-  }), [uid, user, profile]);
+  const player = useMemo(() => {
+    const baseHandle = profile.displayName || user.displayName ||
+      (user.email ? user.email.split("@")[0] : ("Guest-" + uid.slice(0, 6)));
+    return {
+      uid,
+      email: user.email,
+      isAnonymous: user.isAnonymous,
+      handle: user.isAnonymous ? `${baseHandle} (guest)` : baseHandle,
+      rank: profile.currency.rank,
+      coins: profile.currency.coins,
+      gems: profile.currency.gems,
+    };
+  }, [uid, user, profile]);
+
+  // First-boot toast for guests so they know progress is ephemeral
+  useEffect(() => {
+    if (user.isAnonymous && !sessionStorage.getItem("guestWarned")) {
+      sessionStorage.setItem("guestWarned", "1");
+      setTimeout(() => showToast("Guest session · sign up to keep your progress"), 1200);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Redirect to landing if signed out from another tab
   useEffect(() => {
