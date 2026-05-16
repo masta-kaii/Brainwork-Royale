@@ -78,14 +78,21 @@
        expose RAPIER on window after init and dispatch 'rapier-ready' so
        any script that needs physics can wait for it. -->
   <script type="module">
-    // jsdelivr serves the package's es-module entry directly. esm.sh used
-    // to mangle the wasm base64 payload in some networks; jsdelivr is a
-    // straight passthrough.
-    const RAPIER_URL = "https://cdn.jsdelivr.net/npm/@dimforge/[email protected]/rapier.es.js";
+    // Build the URL at runtime via concat. Otherwise the literal
+    // "name@version" pattern (e.g. "compat@0.12.0") in the HTML source gets
+    // mangled to "[email protected]" by Cloudflare email-obfuscation,
+    // privacy browser extensions, or corporate proxies. Concat at runtime
+    // makes the pattern never appear as static text.
+    const PKG = "@dimforge/rapier3d-compat";
+    const VER = "0.12.0";
+    const AT = String.fromCharCode(64);  // "@" without writing it as a literal
+    const PATH = "/rapier.es.js";
+    const URLS = [
+      "https://cdn.jsdelivr.net/npm/" + PKG + AT + VER + PATH,
+      "https://unpkg.com/" + PKG + AT + VER + PATH,
+    ];
 
-    // Fail-safe timeout: if init() hasn't resolved in 20 s, surface the
-    // error to the UI instead of leaving the user staring at "BOOTING…".
-    const FAIL_TIMEOUT = 20000;
+    const FAIL_TIMEOUT = 25000;
     const timer = setTimeout(() => {
       if (!window.RAPIER_READY) {
         console.error("Rapier init timed out after", FAIL_TIMEOUT, "ms");
@@ -96,19 +103,30 @@
       }
     }, FAIL_TIMEOUT);
 
-    try {
-      const mod = await import(RAPIER_URL);
-      const RAPIER = mod.default || mod;
-      await RAPIER.init();
-      clearTimeout(timer);
+    let lastErr = null;
+    let RAPIER = null;
+    for (const url of URLS) {
+      try {
+        const mod = await import(/* @vite-ignore */ url);
+        RAPIER = mod.default || mod;
+        await RAPIER.init();
+        console.log("Rapier loaded from", url);
+        break;
+      } catch (e) {
+        console.warn("Rapier import failed from", url, "—", e.message);
+        lastErr = e;
+        RAPIER = null;
+      }
+    }
+    clearTimeout(timer);
+    if (RAPIER) {
       window.RAPIER = RAPIER;
       window.RAPIER_READY = true;
-    } catch (e) {
-      clearTimeout(timer);
-      console.error("Rapier failed to load:", e);
-      window.RAPIER_READY = true;     // fail-open so non-physics screens still render
+    } else {
+      console.error("Rapier failed from all CDNs:", lastErr);
+      window.RAPIER_READY = true;
       window.RAPIER_FAILED = true;
-      window.RAPIER_ERROR = e;
+      window.RAPIER_ERROR = lastErr || new Error("all-cdns-failed");
     }
     window.dispatchEvent(new Event("rapier-ready"));
   </script>

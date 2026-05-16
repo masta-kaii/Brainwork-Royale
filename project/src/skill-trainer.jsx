@@ -176,11 +176,19 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
   if (failed) {
     const err = window.RAPIER_ERROR;
     const code = err?.message || String(err || "unknown");
+    const isEmailObfuscation = /email[%-_]?(20)?protected/i.test(code);
     return (
       <div className="card" style={{ padding: 20 }}>
         <div className="card__label">Training unavailable</div>
         <div className="mono tiny" style={{ color: "var(--ink-2)", marginTop: 8, lineHeight: 1.6 }}>
           The Rapier physics engine failed to load.<br />
+          {isEmailObfuscation ? (
+            <>
+              Your network is doing <b>email-obfuscation rewriting</b> on the
+              CDN URL. Disable any privacy / anti-tracking browser extension
+              for this site, or open the site in a clean incognito window.<br />
+            </>
+          ) : null}
           <span style={{ color: "var(--magenta)" }}>{code}</span>
         </div>
       </div>
