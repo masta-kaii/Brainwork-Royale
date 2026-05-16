@@ -45,6 +45,13 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 
+# ---- Firebase tooling / emulator artifacts ----
+firebase-export-*/
+functions/.runtimeconfig.json
+functions/lib/
+functions/.env
+functions/.env.*
+
 # ---- Note on Firebase web config ----
 # The web config in project/src/firebase.js (apiKey, authDomain, projectId,
 # etc.) is NOT secret. Firebase ships it inside every client app. Anyone
