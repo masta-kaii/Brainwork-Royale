@@ -35,7 +35,23 @@ function App({ user, initialState }) {
 
   // AI object passed to BattleScreen includes the trained skill levels so
   // sim.jsx can read them and apply battle bonuses.
-  const aiWithSkills = useMemo(() => ({ ...ai, skills }), [ai, skills]);
+  // Pick the strongest mastered locomotion brain to drive the player's
+  // agent in Battle/Race. We prefer Run, then Walk, then Balance (any
+  // locomotion brain works because the sim only uses output magnitude).
+  // The chosen brain is decoded into the engine's internal format once.
+  const aiBrain = useMemo(() => {
+    const keys = ["run-L3", "run-L2", "run-L1", "walk-L3", "walk-L2", "walk-L1", "balance-L3"];
+    for (const key of keys) {
+      const json = brains?.[key];
+      if (json && window.brainEngine?.brainFromJSON) {
+        try { return { ...window.brainEngine.brainFromJSON(json), _meta: { key, ...(json.meta || {}) } }; }
+        catch (e) { /* ignore decode failures */ }
+      }
+    }
+    return null;
+  }, [brains]);
+
+  const aiWithSkills = useMemo(() => ({ ...ai, skills, brain: aiBrain }), [ai, skills, aiBrain]);
 
   // Composite "player" object used by HomeScreen + rail
   const player = useMemo(() => {
