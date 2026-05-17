@@ -79,6 +79,14 @@ function _snapshotRagdoll(rag, extra = {}, props = null) {
     const t = b.translation(), r = b.rotation();
     bodies[name] = { x: t.x, y: t.y, z: t.z, qx: r.x, qy: r.y, qz: r.z, qw: r.w };
   }
+  // Joint angles per tick — used by the renderer's bone-driving so the
+  // PEP-Smol model's actual leg bones rotate with the physics joints.
+  const joints = {
+    lHip:  rag.joints.lHip.angle?.()  ?? 0,
+    rHip:  rag.joints.rHip.angle?.()  ?? 0,
+    lKnee: rag.joints.lKnee.angle?.() ?? 0,
+    rKnee: rag.joints.rKnee.angle?.() ?? 0,
+  };
   let propsSnap = null;
   if (props) {
     propsSnap = {};
@@ -88,7 +96,7 @@ function _snapshotRagdoll(rag, extra = {}, props = null) {
       propsSnap[name] = { x: t.x, y: t.y, z: t.z, qx: r.x, qy: r.y, qz: r.z, qw: r.w };
     }
   }
-  return { bodies, props: propsSnap, ...extra };
+  return { bodies, joints, props: propsSnap, ...extra };
 }
 
 // Seeded pseudo-random so episodes are reproducible per genome
@@ -438,6 +446,168 @@ const walkL3 = {
 };
 
 // ============================================================
+// RUN — same locomotion task as Walk, but speed is rewarded.
+// Same body + observation shape as Walk; the only difference is
+// the fitness function adds a "finish faster = more bonus" term,
+// and the targets are longer with tighter time budgets. The brain
+// naturally learns a more aggressive gait because there's less
+// time to cover more ground.
+// ============================================================
+
+const RUN_ARCH = WALK_ARCH; // 14, 20, 4 — same shape
+
+function _buildRun(world, targetZ, maxTicks) {
+  const rag = window.brainEngine.createRagdoll(world);
+  return {
+    rag, targetZ, maxTicks,
+    target: { x: 0, y: 0.1, z: targetZ },
+    reached: false,
+    reachedAtTick: null,
+  };
+}
+
+function _runDone(env, tick) {
+  if (env.rag.torsoTopY() < FALLEN_Y) return true;
+  if (!env.reached) {
+    const t = env.rag.bodies.torso.translation();
+    const dist = Math.hypot(t.x - env.target.x, t.z - env.target.z);
+    if (dist < 0.6) {
+      env.reached = true;
+      env.reachedAtTick = tick;
+    }
+  }
+  return false;
+}
+
+// Fitness = progress + (reached ? speed bonus up to +5 : 0) + (alive ? 1 : 0)
+// Speed bonus scales with how much time was left when finished.
+function _runFitness(env, tick, alive) {
+  const t = env.rag.bodies.torso.translation();
+  const progress = Math.max(0, Math.min(t.z, env.targetZ));
+  const speedBonus = env.reached && env.reachedAtTick != null
+    ? 5 * Math.max(0, (env.maxTicks - env.reachedAtTick) / env.maxTicks)
+    : 0;
+  const aliveBonus = alive ? 1 : 0;
+  return progress + speedBonus + aliveBonus;
+}
+
+// Track-style visuals — amber accent so Run reads as "speed track" vs the
+// mint walk arrows. Chevrons along the path hint at direction.
+function _runPropVisuals(targetZ) {
+  const props = [
+    { name: "target", geom: { type: "cone", radius: 0.32, height: 0.9 },
+      color: 0xffb84d, emissive: 0x6d4a14, static: { x: 0, y: 0.55, z: targetZ } },
+    { name: "startMarker", geom: { type: "box", size: [0.8, 0.02, 0.08] },
+      color: 0xffb84d, emissive: 0x6d4a14, static: { x: 0, y: 0.16, z: 0 } },
+    { name: "endMarker", geom: { type: "box", size: [0.8, 0.02, 0.08] },
+      color: 0x5df2d6, emissive: 0x2a8a7a, static: { x: 0, y: 0.16, z: targetZ } },
+  ];
+  // Chevron strips every 1 m along the path
+  for (let z = 1; z < targetZ; z += 1) {
+    props.push({
+      name: "chev_l" + z, geom: { type: "box", size: [0.18, 0.02, 0.06] },
+      color: 0xffb84d, emissive: 0x6d4a14,
+      static: { x: -0.25, y: 0.165, z, rotY: Math.PI / 6 },
+    });
+    props.push({
+      name: "chev_r" + z, geom: { type: "box", size: [0.18, 0.02, 0.06] },
+      color: 0xffb84d, emissive: 0x6d4a14,
+      static: { x: 0.25, y: 0.165, z, rotY: -Math.PI / 6 },
+    });
+  }
+  return props;
+}
+
+const runL1 = {
+  id: "run-L1",
+  skillId: "run",
+  level: 1,
+  name: "Run · Sprint track",
+  arch: RUN_ARCH,
+  theoreticalMax: 5 + 5 + 1,                 // target + max speed bonus + alive
+  maxTicks: 320,                             // ~5.3 s — must be fast
+  cameraView: { position: [4.0, 1.8, 2.5], lookAt: [0, 0.9, 2.5] },
+  build: (world) => _buildRun(world, 5, 320),
+  buildProps: () => ({}),
+  propVisuals: _runPropVisuals(5),
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: () => {},
+  done: _runDone,
+  fitness: _runFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+
+const runL2 = {
+  id: "run-L2",
+  skillId: "run",
+  level: 2,
+  name: "Run · Sprint + obstacle",
+  arch: RUN_ARCH,
+  theoreticalMax: 7 + 5 + 1,
+  maxTicks: 420,                             // ~7 s
+  cameraView: { position: [4.5, 1.9, 3.5], lookAt: [0, 0.9, 3.5] },
+  build: (world) => _buildRun(world, 7, 420),
+  buildProps(world) {
+    const p = _makePendulum(world, {
+      anchorX: -1.2, anchorY: 2.6, anchorZ: 3.5,
+      chainLen: 1.1, ballRadius: 0.20, ballMass: 5.0, initialKick: 2.2,
+    });
+    return { pendulumBall: p.ball, pendulumAnchor: p.anchor };
+  },
+  propVisuals: [
+    ..._runPropVisuals(7),
+    { name: "pendulumBall",   geom: { type: "sphere", radius: 0.20 },         color: 0xff5577, emissive: 0x661c2d },
+    { name: "pendulumAnchor", geom: { type: "box", size: [0.15, 0.10, 0.15] }, color: 0x8b91b8, emissive: 0x2a3155 },
+  ],
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: () => {},
+  done: _runDone,
+  fitness: _runFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+
+const runL3 = {
+  id: "run-L3",
+  skillId: "run",
+  level: 3,
+  name: "Run · Sprint with two obstacles",
+  arch: RUN_ARCH,
+  theoreticalMax: 9 + 5 + 1,
+  maxTicks: 540,                             // 9 s
+  cameraView: { position: [5.0, 2.0, 4.5], lookAt: [0, 0.9, 4.5] },
+  build: (world) => _buildRun(world, 9, 540),
+  buildProps(world) {
+    const a = _makePendulum(world, {
+      anchorX: -1.2, anchorY: 2.6, anchorZ: 3.0,
+      chainLen: 1.0, ballRadius: 0.20, ballMass: 5.0, initialKick: 2.4,
+    });
+    const b = _makePendulum(world, {
+      anchorX:  1.3, anchorY: 2.8, anchorZ: 6.0,
+      chainLen: 1.2, ballRadius: 0.22, ballMass: 6.0, initialKick: -2.0,
+    });
+    return {
+      pendulumAball: a.ball, pendulumAanchor: a.anchor,
+      pendulumBball: b.ball, pendulumBanchor: b.anchor,
+    };
+  },
+  propVisuals: [
+    ..._runPropVisuals(9),
+    { name: "pendulumAball",   geom: { type: "sphere", radius: 0.20 },         color: 0xff5577, emissive: 0x661c2d },
+    { name: "pendulumAanchor", geom: { type: "box", size: [0.15, 0.10, 0.15] }, color: 0x8b91b8, emissive: 0x2a3155 },
+    { name: "pendulumBball",   geom: { type: "sphere", radius: 0.22 },         color: 0xff8b45, emissive: 0x6d3818 },
+    { name: "pendulumBanchor", geom: { type: "box", size: [0.15, 0.10, 0.15] }, color: 0x8b91b8, emissive: 0x2a3155 },
+  ],
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: () => {},
+  done: _runDone,
+  fitness: _runFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+
+// ============================================================
 // PLACEHOLDERS — skill envs to build in future rounds
 // ============================================================
 function _placeholder(skillId, level) {
@@ -467,10 +637,10 @@ const ENV_REGISTRY = {
   "walk-L1":    walkL1,
   "walk-L2":    walkL2,
   "walk-L3":    walkL3,
+  "run-L1":     runL1,
+  "run-L2":     runL2,
+  "run-L3":     runL3,
   // Placeholders for skills still to ship in future rounds
-  "run-L1":    _placeholder("run", 1),
-  "run-L2":    _placeholder("run", 2),
-  "run-L3":    _placeholder("run", 3),
   "jump-L1":   _placeholder("jump", 1),
   "jump-L2":   _placeholder("jump", 2),
   "jump-L3":   _placeholder("jump", 3),

@@ -1472,6 +1472,11 @@ function mountRagdollScene(container) {
     currentAnim = name;
   }
 
+  // Cached references to the bear's leg bones — populated when we find
+  // them in the GLTF skeleton. Each one's bind-pose rotation is stored
+  // so bone-driving can apply a DELTA from rest instead of overwriting.
+  const legBones = {};   // { lThigh, rThigh, lShin, rShin } -> { bone, restQuat }
+
   // Build the PEP-Smol model from the pre-loaded GLTF. Fall back to a
   // single torso capsule if the asset isn't available.
   if (window.PEP_BASE && !window.PEP_FAILED) {
@@ -1491,6 +1496,12 @@ function mountRagdollScene(container) {
         o.castShadow = true;
         o.receiveShadow = true;
       }
+      // Find the leg bones by name and cache their bind-pose rotation.
+      // Bone names come from the GLTF; we use the user's part names.
+      if (o.name === "Left_Thigh-Local")  legBones.lThigh = { bone: o, restQuat: o.quaternion.clone() };
+      if (o.name === "Right_Thigh-Local") legBones.rThigh = { bone: o, restQuat: o.quaternion.clone() };
+      if (o.name === "Left_Leg-Local")    legBones.lShin  = { bone: o, restQuat: o.quaternion.clone() };
+      if (o.name === "Right_Leg-Local")   legBones.rShin  = { bone: o, restQuat: o.quaternion.clone() };
     });
     scene.add(pepModel);
 
@@ -1525,6 +1536,41 @@ function mountRagdollScene(container) {
     // Rotation: copy torso so the model tilts as balance is lost
     pepModel.quaternion.set(torso.qx, torso.qy, torso.qz, torso.qw);
   }
+
+  // Bone-driving: overwrite the bear's leg bones with physics joint angles
+  // every frame, after the AnimationMixer has run. This makes the bear's
+  // legs visibly articulate with the brain's torque commands.
+  // Joints come in as { lHip, rHip, lKnee, rKnee } in radians.
+  // Bone-driving must run AFTER the AnimationMixer each frame, otherwise
+  // the Idle anim re-sets the leg bones and the physics-driven rotation
+  // is lost. So applyJointAngles just stashes the latest joint angles;
+  // renderFrame applies them post-mixer.
+  let pendingJoints = null;
+  const _legAxis = new THREE.Vector3(1, 0, 0);   // hips/knees rotate around X
+  const _tmpQ = new THREE.Quaternion();
+  function applyJointAngles(joints) { pendingJoints = joints || null; }
+  function _flushJointAngles() {
+    if (!pendingJoints) return;
+    for (const name of ["lHip", "rHip", "lShin", "rShin"]) {
+      const entry = legBones[name];
+      if (!entry) continue;
+      let angle;
+      if (name === "lHip")  angle = pendingJoints.lHip  || 0;
+      else if (name === "rHip")  angle = pendingJoints.rHip  || 0;
+      else if (name === "lShin") angle = pendingJoints.lKnee || 0;
+      else if (name === "rShin") angle = pendingJoints.rKnee || 0;
+      _tmpQ.setFromAxisAngle(_legAxis, angle);
+      entry.bone.quaternion.copy(entry.restQuat).multiply(_tmpQ);
+    }
+  }
+
+  // Map legBones key → physics body name used elsewhere
+  // (lHip joint controls lThigh bone; lKnee joint controls lShin bone)
+  // The applyJointAngles above expects legBones keyed by lHip/rHip/lShin/rShin.
+  // Rename the cached bones for clarity:
+  if (legBones.lThigh) { legBones.lHip  = legBones.lThigh; delete legBones.lThigh; }
+  if (legBones.rThigh) { legBones.rHip  = legBones.rThigh; delete legBones.rThigh; }
+  // (lShin / rShin keys already match)
 
   function setFallen(fallen) {
     if (!pepMixer) return;
@@ -1569,6 +1615,10 @@ function mountRagdollScene(container) {
     elapsed += dt;
     accent.intensity = 1.0 + Math.sin(elapsed * 2.4) * 0.3;
     updateMixer(dt);
+    // Bone-driving — overwrite leg bone rotations AFTER mixer has run.
+    // Without this the idle anim would re-set the leg bones each frame
+    // and the physics joint angles would be lost.
+    _flushJointAngles();
     // Cue fade
     if (cueExpiresAt) {
       const remaining = (cueExpiresAt - performance.now()) / 240;
@@ -1603,7 +1653,7 @@ function mountRagdollScene(container) {
   }
 
   return {
-    applySnapshot, setFallen, flashCue, renderFrame, dispose,
+    applySnapshot, applyJointAngles, setFallen, flashCue, renderFrame, dispose,
     setPropVisuals, applyPropsSnapshot, disposeProps, setView,
     get controls() { return controls; },
   };
