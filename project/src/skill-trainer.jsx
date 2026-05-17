@@ -310,8 +310,33 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
               {existingBrain?.meta?.mastered ? " · ★ mastered" : null}
             </div>
           </div>
-          <div className="mono tiny" style={{ color: "var(--amber)" }}>
-            ◈ {profile.currency.coins.toLocaleString()}
+          <div className="row" style={{ gap: 8 }}>
+            {existingBrain ? (
+              <button
+                className="btn btn--ghost"
+                style={{ padding: "4px 10px", fontSize: 11 }}
+                onClick={() => {
+                  // Portable JSON download — what other game engines load
+                  const blob = new Blob(
+                    [JSON.stringify(existingBrain, null, 2)],
+                    { type: "application/json" }
+                  );
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `bear-brain-${skillId}-L${level}.json`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                  onToast?.(`Exported bear-brain-${skillId}-L${level}.json`);
+                }}
+                title="Download this trained brain as portable JSON"
+              >↓ Export brain</button>
+            ) : null}
+            <div className="mono tiny" style={{ color: "var(--amber)", alignSelf: "center" }}>
+              ◈ {profile.currency.coins.toLocaleString()}
+            </div>
           </div>
         </div>
 

@@ -117,7 +117,10 @@ function isLevelMastered(brains, skillId, level) {
 }
 
 // Is the SKILL ITSELF unlocked? Yes iff its prereq's L3 is mastered (or no prereq).
+// Demo override: if window.DEMO_UNLOCK_ALL is true (set via the in-app toggle),
+// every skill is unlocked so the user can audit the whole curriculum.
 function isUnlocked(brains, skillId) {
+  if (typeof window !== "undefined" && window.DEMO_UNLOCK_ALL) return true;
   const def = SKILL_TREE[skillId];
   if (!def) return false;
   if (!def.prereq) return true;
@@ -126,8 +129,10 @@ function isUnlocked(brains, skillId) {
 
 // What's the highest level the user can currently TRAIN for this skill?
 // L1 is always trainable once the skill is unlocked. L2 trainable once L1 mastered. L3 once L2 mastered.
+// Demo override: all 3 trainable.
 function highestTrainableLevel(brains, skillId) {
   if (!isUnlocked(brains, skillId)) return 0;
+  if (typeof window !== "undefined" && window.DEMO_UNLOCK_ALL) return 3;
   if (isLevelMastered(brains, skillId, 2)) return 3;
   if (isLevelMastered(brains, skillId, 1)) return 2;
   return 1;
