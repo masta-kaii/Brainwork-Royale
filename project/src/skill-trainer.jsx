@@ -15,6 +15,38 @@ const SKILL_TRAINER_PACKS = [
   { id: "marathon", label: "Marathon",     gens: 100, cost: 800 },
 ];
 
+// Tiny canvas sparkline — last N best-fitness samples
+function _drawSparkline(canvas, samples) {
+  if (!canvas || !samples?.length) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w * dpr) {
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const lo = Math.min(...samples, 0);
+  const hi = Math.max(...samples, lo + 0.001);
+  const span = hi - lo;
+  ctx.strokeStyle = "rgba(93, 242, 214, 0.85)";
+  ctx.fillStyle = "rgba(93, 242, 214, 0.15)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  samples.forEach((v, i) => {
+    const x = (i / Math.max(1, samples.length - 1)) * w;
+    const y = h - ((v - lo) / span) * (h - 4) - 2;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.lineTo(w, h);
+  ctx.lineTo(0, h);
+  ctx.closePath();
+  ctx.fill();
+}
+
 function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onToast, onBrainSaved }) {
   const stageRef = React.useRef(null);
   const sceneRef = React.useRef(null);
@@ -24,7 +56,10 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
   // advanced in lockstep so the population view stays synchronised.
   const playbackRef = React.useRef({ traces: null, idx: 0, lastT: 0 });
   const [session, setSession] = React.useState(null);
-  const [stats, setStats] = React.useState({ gen: 0, best: 0, avg: 0 });
+  const [stats, setStats] = React.useState({ gen: 0, best: 0, avg: 0, std: 0 });
+  // Per-generation history for the sparkline (best fitness over time)
+  const genHistoryRef = React.useRef([]);
+  const sparklineRef = React.useRef(null);
   const [ready, setReady] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
 
@@ -155,7 +190,10 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
       while (!cancelled && session.generationsRemaining > 0) {
         const res = await trainerRef.current.runOneGeneration();
         if (!res || cancelled) break;
-        setStats({ gen: res.gen, best: res.bestFitness, avg: res.avgFitness });
+        setStats({ gen: res.gen, best: res.bestFitness, avg: res.avgFitness, std: res.stdFitness || 0 });
+        genHistoryRef.current.push(res.bestFitness);
+        if (genHistoryRef.current.length > 60) genHistoryRef.current.shift();
+        _drawSparkline(sparklineRef.current, genHistoryRef.current);
         playbackRef.current = { traces: lastBestRef.current.traces || [], idx: 0, lastT: 0 };
         // Reset fallen state on every bear so the new gen plays from idle
         const popSize = sceneRef.current?.populationSize || 1;
@@ -216,7 +254,8 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
       },
     });
     trainerRef.current = t;
-    setStats({ gen: 0, best: 0, avg: 0 });
+    setStats({ gen: 0, best: 0, avg: 0, std: 0 });
+    genHistoryRef.current = [];
     setSession({
       generationsRemaining: pack.gens,
       generationsTotal: pack.gens,
@@ -308,18 +347,19 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
           <div className="training-ticker">
             <div className="training-ticker__row">
               <span className="mono tiny" style={{ color: "var(--ink-2)" }}>
-                BEST {stats.best.toFixed(2)} · AVG {stats.avg.toFixed(2)} · MAX {env?.theoreticalMax?.toFixed?.(1) || "?"}
+                BEST {stats.best.toFixed(2)} · AVG {stats.avg.toFixed(2)} · σ {stats.std.toFixed(2)} · MAX {env?.theoreticalMax?.toFixed?.(1) || "?"}
               </span>
               <span className="mono tiny" style={{ color: masteredSoFar ? "var(--mint)" : "var(--ink-3)" }}>
                 {masteredSoFar ? "★ MASTERED" : `${Math.floor(fitnessPctOfMax)}% to mastery`}
               </span>
             </div>
+            <canvas ref={sparklineRef} className="training-sparkline" />
             <div className="training-ticker__bar">
               <div className="training-ticker__bar-fill" style={{ width: `${pctDone * 100}%` }} />
             </div>
             <div className="mono tiny" style={{ color: "var(--ink-3)" }}>
               {session.generationsTotal - session.generationsRemaining} / {session.generationsTotal} generations
-              {" · "} 16 brains evaluated per generation
+              {" · "} {env?.trainerConfig?.population ?? 16} brains evaluated per generation
             </div>
           </div>
         )}
@@ -339,27 +379,52 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
           </div>
           <div className="row" style={{ gap: 8 }}>
             {existingBrain ? (
-              <button
-                className="btn btn--ghost"
-                style={{ padding: "4px 10px", fontSize: 11 }}
-                onClick={() => {
-                  // Portable JSON download — what other game engines load
-                  const blob = new Blob(
-                    [JSON.stringify(existingBrain, null, 2)],
-                    { type: "application/json" }
-                  );
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `bear-brain-${skillId}-L${level}.json`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                  onToast?.(`Exported bear-brain-${skillId}-L${level}.json`);
-                }}
-                title="Download this trained brain as portable JSON"
-              >↓ Export brain</button>
+              <>
+                <button
+                  className="btn btn--ghost"
+                  style={{ padding: "4px 10px", fontSize: 11 }}
+                  disabled={!!session || !ready}
+                  onClick={() => {
+                    // Run the saved brain once with trace recording and feed
+                    // it into the multi-bear playback. All 4 bears show the
+                    // SAME brain so the learned gait is easy to read.
+                    if (!env || !window.brainEngine) return;
+                    try {
+                      const b = window.brainEngine.brainFromJSON(existingBrain);
+                      const res = window.brainEngine.evalEnv(env, b, { recordTrace: true });
+                      const popN = sceneRef.current?.populationSize || 1;
+                      const traces = Array.from({ length: popN }, () => res.trace);
+                      playbackRef.current = { traces, idx: 0, lastT: 0 };
+                      for (let i = 0; i < popN; i++) sceneRef.current?.setFallen(false, i);
+                      onToast?.(`Replaying best brain · fitness ${res.fitness.toFixed(2)}`);
+                    } catch (e) {
+                      console.error("Play best brain failed", e);
+                      onToast?.("Couldn't replay this brain");
+                    }
+                  }}
+                  title="Re-run this saved brain in the arena (no coin cost)"
+                >▶ Play best brain</button>
+                <button
+                  className="btn btn--ghost"
+                  style={{ padding: "4px 10px", fontSize: 11 }}
+                  onClick={() => {
+                    const blob = new Blob(
+                      [JSON.stringify(existingBrain, null, 2)],
+                      { type: "application/json" }
+                    );
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `bear-brain-${skillId}-L${level}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    onToast?.(`Exported bear-brain-${skillId}-L${level}.json`);
+                  }}
+                  title="Download this trained brain as portable JSON"
+                >↓ Export brain</button>
+              </>
             ) : null}
             <div className="mono tiny" style={{ color: "var(--amber)", alignSelf: "center" }}>
               ◈ {profile.currency.coins.toLocaleString()}
