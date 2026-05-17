@@ -117,30 +117,36 @@ function isReady() { return !!window.RAPIER && !window.RAPIER_FAILED; }
 
 function _capsuleBody(world, x, y, z, halfHeight, radius, density = 1.0) {
   const RAPIER = window.RAPIER;
+  // Higher damping than before so flailing decays naturally. User feedback:
+  // "swinging around recklessly, not realistic". This pulls velocities down
+  // without changing the brain's torque interface.
   const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
-    .setLinearDamping(0.1)
-    .setAngularDamping(0.4);
+    .setLinearDamping(0.3)
+    .setAngularDamping(1.6);
   const body = world.createRigidBody(bodyDesc);
   const colDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius)
     .setDensity(density)
-    .setFriction(0.9)
-    .setRestitution(0.05);
+    .setFriction(0.95)
+    .setRestitution(0.0);
   world.createCollider(colDesc, body);
   return body;
 }
 
-// Builds the 5-body humanoid + 4 joints. Returns refs we need each tick.
+// Builds the humanoid + joints. Returns refs we need each tick.
+// 7 bodies: torso, 2 thighs, 2 shins, 2 feet (passive).
+// 6 joints: 2 hips + 2 knees (brain-driven), 2 ankles (passive, dangle).
 function createRagdoll(world, originX = 0, originZ = 0) {
   const RAPIER = window.RAPIER;
   // Body proportions (metres)
   const TORSO_HALF = 0.30, TORSO_R = 0.16;
   const THIGH_HALF = 0.22, THIGH_R = 0.10;
-  const SHIN_HALF  = 0.22, SHIN_R  = 0.09;
+  const SHIN_HALF  = 0.20, SHIN_R  = 0.09;
+  const FOOT_HALF  = 0.10, FOOT_R  = 0.05;     // small flat foot, NEW
   // Vertical positions for spawn pose (legs straight, torso upright)
-  const SHIN_Y  = SHIN_HALF + SHIN_R + 0.02;                          // feet just above ground
-  const THIGH_Y = SHIN_Y + SHIN_HALF + SHIN_R + THIGH_HALF + THIGH_R; // top of shin → centre of thigh
-  // We want hip joint at top of thigh = THIGH_Y + THIGH_HALF + THIGH_R
+  const FOOT_Y  = FOOT_R + 0.01;                                      // foot rests on ground
+  const SHIN_Y  = FOOT_Y + FOOT_R + SHIN_HALF + SHIN_R + 0.01;        // shin sits above the foot
+  const THIGH_Y = SHIN_Y + SHIN_HALF + SHIN_R + THIGH_HALF + THIGH_R; // thigh above shin
   const HIP_Y   = THIGH_Y + THIGH_HALF + THIGH_R;
   const TORSO_Y = HIP_Y + TORSO_HALF + TORSO_R;
   const HIP_DX  = 0.13; // horizontal offset for each leg
@@ -150,25 +156,39 @@ function createRagdoll(world, originX = 0, originZ = 0) {
   const rThigh = _capsuleBody(world, originX + HIP_DX,  THIGH_Y, originZ, THIGH_HALF, THIGH_R, 1.0);
   const lShin  = _capsuleBody(world, originX - HIP_DX,  SHIN_Y,  originZ, SHIN_HALF,  SHIN_R,  0.9);
   const rShin  = _capsuleBody(world, originX + HIP_DX,  SHIN_Y,  originZ, SHIN_HALF,  SHIN_R,  0.9);
+  // Feet — small flat capsules. Brain doesn't see/control them; ankle joints
+  // are passive (limits but no motor). This adds realistic ground contact
+  // and prevents the shin from spinning recklessly.
+  const lFoot  = _capsuleBody(world, originX - HIP_DX,  FOOT_Y,  originZ + 0.02, FOOT_HALF, FOOT_R, 1.1);
+  const rFoot  = _capsuleBody(world, originX + HIP_DX,  FOOT_Y,  originZ + 0.02, FOOT_HALF, FOOT_R, 1.1);
 
   // Revolute joints around the X axis (pitch) — front/back swing.
-  // anchor1/2 are local positions on each body in its own frame.
   function mkHip(thigh, sign) {
-    const anchor1 = { x: sign * HIP_DX, y: -TORSO_HALF - TORSO_R, z: 0 }; // bottom-side of torso
-    const anchor2 = { x: 0, y: THIGH_HALF + THIGH_R, z: 0 };               // top of thigh
+    const anchor1 = { x: sign * HIP_DX, y: -TORSO_HALF - TORSO_R, z: 0 };
+    const anchor2 = { x: 0, y: THIGH_HALF + THIGH_R, z: 0 };
     const axis = { x: 1, y: 0, z: 0 };
     const desc = RAPIER.JointData.revolute(anchor1, anchor2, axis);
     const j = world.createImpulseJoint(desc, torso, thigh, true);
-    j.setLimits(-1.4, 1.4);                                                // ~80° each way
+    j.setLimits(-0.9, 0.9);                                                // tightened from ±1.4 — less reckless swing
     return j;
   }
   function mkKnee(thigh, shin) {
-    const anchor1 = { x: 0, y: -THIGH_HALF - THIGH_R, z: 0 };              // bottom of thigh
-    const anchor2 = { x: 0, y:  SHIN_HALF  + SHIN_R,  z: 0 };              // top of shin
+    const anchor1 = { x: 0, y: -THIGH_HALF - THIGH_R, z: 0 };
+    const anchor2 = { x: 0, y:  SHIN_HALF  + SHIN_R,  z: 0 };
     const axis = { x: 1, y: 0, z: 0 };
     const desc = RAPIER.JointData.revolute(anchor1, anchor2, axis);
     const j = world.createImpulseJoint(desc, thigh, shin, true);
-    j.setLimits(-0.05, 2.4);                                               // knee bends back only
+    j.setLimits(-0.05, 1.8);                                               // tightened from 2.4 — knee can't fold flat
+    return j;
+  }
+  function mkAnkle(shin, foot) {
+    // Foot pivots horizontally so it can rest flat as the shin tilts.
+    const anchor1 = { x: 0, y: -SHIN_HALF - SHIN_R, z: 0 };                // bottom of shin
+    const anchor2 = { x: 0, y:  FOOT_R,             z: -0.02 };            // top-back of foot
+    const axis = { x: 1, y: 0, z: 0 };
+    const desc = RAPIER.JointData.revolute(anchor1, anchor2, axis);
+    const j = world.createImpulseJoint(desc, shin, foot, true);
+    j.setLimits(-0.45, 0.45);                                              // ±25° passive sway
     return j;
   }
 
@@ -176,12 +196,13 @@ function createRagdoll(world, originX = 0, originZ = 0) {
   const rHip = mkHip(rThigh,  1);
   const lKnee = mkKnee(lThigh, lShin);
   const rKnee = mkKnee(rThigh, rShin);
+  const lAnkle = mkAnkle(lShin, lFoot);   // passive — not exposed to brain
+  const rAnkle = mkAnkle(rShin, rFoot);
 
   return {
-    bodies: { torso, lThigh, rThigh, lShin, rShin },
-    joints: { lHip, rHip, lKnee, rKnee },
+    bodies: { torso, lThigh, rThigh, lShin, rShin, lFoot, rFoot },
+    joints: { lHip, rHip, lKnee, rKnee, lAnkle, rAnkle },
     spawnY: TORSO_Y,
-    // For the fitness check: head-of-torso current Y
     torsoTopY() {
       const t = torso.translation();
       return t.y + TORSO_HALF + TORSO_R;

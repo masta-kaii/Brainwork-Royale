@@ -35,6 +35,25 @@ function TrainingScreen({ uid, ai, brains, profile, onSpendCoins, onToast, onBra
   const activeUnlocked = isUnlocked(brains, activeSkill);
   const activeDef = tree[activeSkill];
 
+  // Demo toggle — persisted in sessionStorage so it survives navigation
+  // within the session but resets on tab close. Lets you audit the whole
+  // curriculum without grinding through prereqs.
+  const [demoUnlock, setDemoUnlock] = React.useState(() => {
+    if (typeof window === "undefined") return false;
+    if (sessionStorage.getItem("DEMO_UNLOCK_ALL") === "1") {
+      window.DEMO_UNLOCK_ALL = true;
+      return true;
+    }
+    return !!window.DEMO_UNLOCK_ALL;
+  });
+  const toggleDemoUnlock = () => {
+    const next = !demoUnlock;
+    window.DEMO_UNLOCK_ALL = next;
+    if (next) sessionStorage.setItem("DEMO_UNLOCK_ALL", "1");
+    else      sessionStorage.removeItem("DEMO_UNLOCK_ALL");
+    setDemoUnlock(next);
+  };
+
   return (
     <>
       <PageHeader
@@ -44,6 +63,19 @@ function TrainingScreen({ uid, ai, brains, profile, onSpendCoins, onToast, onBra
           <>
             <span><span className="dot" />{masteredCount} / {totalCount} skills mastered</span>
             <span>{profile.currency.coins.toLocaleString()} coins</span>
+            <span
+              onClick={toggleDemoUnlock}
+              style={{
+                cursor: "pointer",
+                color: demoUnlock ? "var(--mint)" : "var(--ink-3)",
+                border: "1px solid " + (demoUnlock ? "var(--mint)" : "var(--line)"),
+                padding: "2px 8px", borderRadius: 4,
+                fontSize: 10, letterSpacing: "0.1em",
+              }}
+              title="Bypass prereq locks so you can audit the whole curriculum"
+            >
+              {demoUnlock ? "★ DEMO: ALL UNLOCKED" : "DEMO UNLOCK"}
+            </span>
           </>
         }
       />
