@@ -19,8 +19,10 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
   const stageRef = React.useRef(null);
   const sceneRef = React.useRef(null);
   const trainerRef = React.useRef(null);
-  const lastBestRef = React.useRef({ brain: null, trace: null });
-  const playbackRef = React.useRef({ trace: null, idx: 0, lastT: 0 });
+  const lastBestRef = React.useRef({ brain: null, traces: null });
+  // Playback now holds an ARRAY of traces (one per visualised bear), all
+  // advanced in lockstep so the population view stays synchronised.
+  const playbackRef = React.useRef({ traces: null, idx: 0, lastT: 0 });
   const [session, setSession] = React.useState(null);
   const [stats, setStats] = React.useState({ gen: 0, best: 0, avg: 0 });
   const [ready, setReady] = React.useState(false);
@@ -68,9 +70,14 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
         if (env.buildProps) envState.props = env.buildProps(previewWorld);
         previewWorld.step();
         const snap = env.snapshot(envState);
-        sceneRef.current.applySnapshot(snap.bodies || snap);
-        if (snap.joints && sceneRef.current.applyJointAngles) {
-          sceneRef.current.applyJointAngles(snap.joints);
+        // Apply the same spawn-pose snapshot to ALL bears in the population
+        // so the arena shows the full lineup standing ready before training.
+        const popN = sceneRef.current?.populationSize || 1;
+        for (let i = 0; i < popN; i++) {
+          sceneRef.current.applySnapshot(snap.bodies || snap, i);
+          if (snap.joints && sceneRef.current.applyJointAngles) {
+            sceneRef.current.applyJointAngles(snap.joints, i);
+          }
         }
         if (snap.props && sceneRef.current.applyPropsSnapshot) {
           sceneRef.current.applyPropsSnapshot(snap.props);
@@ -90,28 +97,41 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       const pb = playbackRef.current;
-      if (pb.trace && pb.trace.length > 0) {
+      const traces = pb.traces;
+      if (traces && traces.length > 0) {
         pb.lastT += dt;
         const FRAME_MS = (window.brainEngine?.PHYS_DT || 1 / 60) * (window.brainEngine?.TRACE_EVERY || 3) * 1000;
         const target = Math.floor(pb.lastT * 1000 / FRAME_MS);
         if (target !== pb.idx) {
-          pb.idx = Math.min(target, pb.trace.length - 1);
-          const frame = pb.trace[pb.idx];
-          sceneRef.current?.applySnapshot(frame.bodies || frame);
-          // Drive the model's leg bones from physics joint angles so the
-          // bear's legs visibly articulate with the brain's torque outputs.
-          if (frame?.joints && sceneRef.current?.applyJointAngles) {
-            sceneRef.current.applyJointAngles(frame.joints);
+          pb.idx = target;
+          // Advance every visualised bear in lockstep. Each trace can have
+          // a different length (some bears fell earlier); pad with the last
+          // frame so the surviving bears keep going.
+          for (let i = 0; i < traces.length; i++) {
+            const trace = traces[i];
+            if (!trace || trace.length === 0) continue;
+            const localIdx = Math.min(pb.idx, trace.length - 1);
+            const frame = trace[localIdx];
+            sceneRef.current?.applySnapshot(frame.bodies || frame, i);
+            if (frame?.joints && sceneRef.current?.applyJointAngles) {
+              sceneRef.current.applyJointAngles(frame.joints, i);
+            }
+            // Mark fallen on the per-bear basis when their trace ends
+            if (localIdx >= trace.length - 1) sceneRef.current?.setFallen(true, i);
           }
-          // Mirror physical props (pendulums, debris, etc.)
-          if (frame?.props && sceneRef.current?.applyPropsSnapshot) {
-            sceneRef.current.applyPropsSnapshot(frame.props);
+          // Props + cue come from the first bear's trace (they're shared
+          // env-level — pendulums etc. were built once per bear but the
+          // top brain's run is the most relevant to watch).
+          const lead = traces[0];
+          if (lead) {
+            const frame = lead[Math.min(pb.idx, lead.length - 1)];
+            if (frame?.props && sceneRef.current?.applyPropsSnapshot) {
+              sceneRef.current.applyPropsSnapshot(frame.props);
+            }
+            if (frame?.cue && sceneRef.current?.flashCue) {
+              sceneRef.current.flashCue(frame.cue);
+            }
           }
-          // Legacy cue visualisation — kept for any envs that still use it
-          if (frame?.cue && sceneRef.current?.flashCue) {
-            sceneRef.current.flashCue(frame.cue);
-          }
-          if (pb.idx >= pb.trace.length - 1) sceneRef.current?.setFallen(true);
         }
       }
       sceneRef.current?.renderFrame(dt);
@@ -136,11 +156,16 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
         const res = await trainerRef.current.runOneGeneration();
         if (!res || cancelled) break;
         setStats({ gen: res.gen, best: res.bestFitness, avg: res.avgFitness });
-        playbackRef.current = { trace: lastBestRef.current.trace || [], idx: 0, lastT: 0 };
-        sceneRef.current?.setFallen(false);
+        playbackRef.current = { traces: lastBestRef.current.traces || [], idx: 0, lastT: 0 };
+        // Reset fallen state on every bear so the new gen plays from idle
+        const popSize = sceneRef.current?.populationSize || 1;
+        for (let i = 0; i < popSize; i++) sceneRef.current?.setFallen(false, i);
         session.generationsRemaining -= 1;
         setSession({ ...session });
-        const playMs = Math.min(2200, (playbackRef.current.trace?.length || 0) * 50 + 400);
+        // Use the LONGEST trace to set playback duration (so the surviving
+        // bear's full run is visible before the next gen kicks).
+        const longest = (playbackRef.current.traces || []).reduce((m, t) => Math.max(m, t?.length || 0), 0);
+        const playMs = Math.min(2200, longest * 50 + 400);
         await new Promise((r) => setTimeout(r, playMs));
       }
       if (!cancelled) {
@@ -179,13 +204,15 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
     // Seed from saved brain (only if arch matches the new env)
     const seedJson = existingBrain;
     const seed = seedJson ? window.brainEngine.brainFromJSON(seedJson) : null;
-    lastBestRef.current = { brain: null, trace: null };
+    lastBestRef.current = { brain: null, traces: null };
+    const visPop = sceneRef.current?.populationSize || 1;
     const t = window.brainEngine.startTrainer({
       env,
       population: 16,
+      visPopulation: visPop,
       seedBrain: seed,
-      onGenerationDone: ({ gen, bestFitness, avgFitness, bestBrain, bestTrace }) => {
-        lastBestRef.current = { brain: bestBrain, trace: bestTrace };
+      onGenerationDone: ({ gen, bestFitness, avgFitness, bestBrain, traces }) => {
+        lastBestRef.current = { brain: bestBrain, traces };
       },
     });
     trainerRef.current = t;

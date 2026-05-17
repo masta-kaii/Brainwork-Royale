@@ -282,6 +282,55 @@ function evalBalance(brain, opts = {}) {
   return evalEnv(env, brain, opts);
 }
 
+// Parallel batch evaluation — runs N independent brains step-locked in
+// their own physics worlds. Used by the "population view" so you see
+// multiple bears attempting the same env simultaneously.
+function evalEnvBatch(env, brains, opts = {}) {
+  const { worldFactory = makeWorld, recordTrace = false } = opts;
+  const states = brains.map((brain) => {
+    const world = worldFactory();
+    const envState = env.build(world);
+    if (env.buildProps) envState.props = env.buildProps(world);
+    return {
+      world, envState, brain,
+      alive: true,
+      ticks: 0,
+      trace: recordTrace ? [env.snapshot(envState)] : null,
+    };
+  });
+
+  // All brains step in lockstep. A brain that "dies" (env.done) stops
+  // stepping but its world is kept alive so the others keep going.
+  let anyAlive = true;
+  while (anyAlive) {
+    anyAlive = false;
+    for (const s of states) {
+      if (!s.alive) continue;
+      env.envStep(s.envState, s.ticks, s.world);
+      const obs = env.observe(s.envState);
+      const out = forward(s.brain, obs);
+      env.act(s.envState, out);
+      s.world.step();
+      s.ticks++;
+      if (recordTrace && s.ticks % TRACE_EVERY === 0) s.trace.push(env.snapshot(s.envState));
+      if (env.done(s.envState, s.ticks) || s.ticks >= env.maxTicks) {
+        s.alive = false;
+      } else {
+        anyAlive = true;
+      }
+    }
+  }
+
+  const results = states.map((s) => {
+    const finalAlive = s.ticks < env.maxTicks && !env.done(s.envState, s.ticks);
+    const fitness = env.fitness(s.envState, s.ticks, finalAlive);
+    if (s.envState.rag) destroyRagdoll(s.world, s.envState.rag);
+    s.world.free?.();
+    return { fitness, ticks: s.ticks, trace: s.trace };
+  });
+  return results;
+}
+
 // ============================================================
 // Trainer — sequential evaluation, elitist GA, callbacks for UI.
 // Now env-driven: caller passes the training env spec.
@@ -289,8 +338,9 @@ function evalBalance(brain, opts = {}) {
 function startTrainer({
   env,                       // env spec from training-envs.getEnv(skill, level)
   population = 16,
+  visPopulation = 1,         // number of top brains to record traces for (used by the population view)
   seedBrain = null,
-  onGenerationDone = null,   // ({ gen, bestFitness, avgFitness, bestBrain, bestTrace, env }) => void
+  onGenerationDone = null,   // ({ gen, bestFitness, avgFitness, bestBrain, traces[], env }) => void
 }) {
   if (!env) throw new Error("startTrainer requires { env }");
   const arch = env.arch || DEFAULT_ARCH;
@@ -318,27 +368,37 @@ function startTrainer({
   async function runOneGeneration() {
     if (stopped) return null;
     gen++;
-    let bestIdx = 0;
     for (let i = 0; i < pop.length; i++) {
       if (stopped) return null;
       const res = evalEnv(env, pop[i].brain, { recordTrace: false });
       pop[i].fitness = res.fitness;
-      if (pop[i].fitness > pop[bestIdx].fitness) bestIdx = i;
       // Yield to the UI between evaluations
       await new Promise((r) => setTimeout(r, 0));
     }
-    // Re-eval BEST with trace recording so we can visualize the winner
-    const bestRes = evalEnv(env, pop[bestIdx].brain, { recordTrace: true });
-    pop[bestIdx].fitness = bestRes.fitness;
+    pop.sort((a, b) => b.fitness - a.fitness);
 
-    const bestFitness = pop[bestIdx].fitness;
+    // Record traces for the top-K brains so the renderer can show
+    // multiple bears side by side. Falls back to single-brain re-eval
+    // when visPopulation == 1.
+    const visN = Math.max(1, Math.min(pop.length, visPopulation));
+    let traces;
+    if (visN > 1) {
+      const topBrains = pop.slice(0, visN).map((p) => p.brain);
+      const batch = evalEnvBatch(env, topBrains, { recordTrace: true });
+      traces = batch.map((r) => r.trace);
+    } else {
+      const bestRes = evalEnv(env, pop[0].brain, { recordTrace: true });
+      pop[0].fitness = bestRes.fitness;
+      traces = [bestRes.trace];
+    }
+
+    const bestFitness = pop[0].fitness;
     const avgFitness = pop.reduce((s, p) => s + p.fitness, 0) / pop.length;
-    const bestBrain = cloneBrain(pop[bestIdx].brain);
+    const bestBrain = cloneBrain(pop[0].brain);
 
-    onGenerationDone?.({ gen, bestFitness, avgFitness, bestBrain, bestTrace: bestRes.trace, env });
+    onGenerationDone?.({ gen, bestFitness, avgFitness, bestBrain, traces, env });
 
     // Breed: keep top 4 elite, rest are mutated copies of top 2
-    pop.sort((a, b) => b.fitness - a.fitness);
     const elite = pop.slice(0, 4).map((p) => ({ brain: cloneBrain(p.brain), fitness: 0 }));
     const next = [...elite];
     for (let i = elite.length; i < pop.length; i++) {
@@ -365,7 +425,7 @@ window.brainEngine = {
   // Physics
   isReady, makeWorld, createRagdoll, destroyRagdoll,
   // Episode + training
-  evalEnv, evalBalance, startTrainer,
+  evalEnv, evalEnvBatch, evalBalance, startTrainer,
   // Constants exposed for the renderer
   PHYS_DT, TRACE_EVERY,
 };
