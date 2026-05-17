@@ -611,27 +611,331 @@ const runL3 = {
 };
 
 // ============================================================
-// PLACEHOLDERS — skill envs to build in future rounds
+// JUMP — clear a hurdle on the way to the target
+// Same body + arch as Walk. A static box wall sits across the path
+// at hurdle height; the bear must lift its body over it. Limits
+// progress because the bear can't physically squeeze around it.
 // ============================================================
-function _placeholder(skillId, level) {
+
+function _makeHurdle(world, { x, z, width = 1.8, height = 0.18, depth = 0.12 }) {
+  const RAPIER = window.RAPIER;
+  const desc = RAPIER.RigidBodyDesc.fixed().setTranslation(x, height / 2 + 0.16, z);
+  const body = world.createRigidBody(desc);
+  const col = RAPIER.ColliderDesc.cuboid(width / 2, height / 2, depth / 2)
+    .setFriction(0.8).setRestitution(0.0);
+  world.createCollider(col, body);
+  return body;
+}
+
+function _buildJump(world, targetZ, maxTicks) {
+  const rag = window.brainEngine.createRagdoll(world);
   return {
-    id: `${skillId}-L${level}`,
-    skillId, level,
-    name: `${skillId} · L${level}`,
-    placeholder: true,
-    arch: { inputs: 12, hidden: 16, outputs: 4 },
-    theoreticalMax: 1,
-    maxTicks: 1,
-    build: () => { throw new Error("env not implemented"); },
-    observe: () => [],
-    act: () => {},
-    envStep: () => {},
-    done: () => true,
-    fitness: () => 0,
-    snapshot: () => ({ bodies: {} }),
-    props: [],
+    rag, targetZ, maxTicks,
+    target: { x: 0, y: 0.1, z: targetZ },
+    reached: false,
+    reachedAtTick: null,
   };
 }
+
+function _jumpVisuals(targetZ, hurdleZs) {
+  const props = [
+    { name: "target", geom: { type: "cone", radius: 0.32, height: 0.9 },
+      color: 0xff8b45, emissive: 0x6d3818, static: { x: 0, y: 0.55, z: targetZ } },
+    { name: "startMarker", geom: { type: "box", size: [0.8, 0.02, 0.08] },
+      color: 0xff8b45, emissive: 0x6d3818, static: { x: 0, y: 0.16, z: 0 } },
+  ];
+  hurdleZs.forEach((z, i) => {
+    props.push({
+      name: "hurdle" + i, geom: { type: "box", size: [0.9, 0.18, 0.06] },
+      color: 0xff8b45, emissive: 0x6d3818,
+    });
+  });
+  return props;
+}
+
+function _buildJumpProps(world, hurdleZs) {
+  const out = {};
+  hurdleZs.forEach((z, i) => { out["hurdle" + i] = _makeHurdle(world, { x: 0, z }); });
+  return out;
+}
+
+const jumpL1 = {
+  id: "jump-L1", skillId: "jump", level: 1, name: "Jump · One hurdle",
+  arch: WALK_ARCH, theoreticalMax: 4 + 3.5, maxTicks: 540,
+  cameraView: { position: [4, 1.9, 2], lookAt: [0, 0.9, 2] },
+  build: (world) => _buildJump(world, 4, 540),
+  buildProps: (world) => _buildJumpProps(world, [2]),
+  propVisuals: _jumpVisuals(4, [2]),
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: () => {},
+  done: _walkDone,
+  fitness: _walkFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+const jumpL2 = {
+  id: "jump-L2", skillId: "jump", level: 2, name: "Jump · Two hurdles",
+  arch: WALK_ARCH, theoreticalMax: 6 + 3.5, maxTicks: 660,
+  cameraView: { position: [4.5, 2.0, 3], lookAt: [0, 0.9, 3] },
+  build: (world) => _buildJump(world, 6, 660),
+  buildProps: (world) => _buildJumpProps(world, [2, 4]),
+  propVisuals: _jumpVisuals(6, [2, 4]),
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: () => {}, done: _walkDone, fitness: _walkFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+const jumpL3 = {
+  id: "jump-L3", skillId: "jump", level: 3, name: "Jump · Three hurdles",
+  arch: WALK_ARCH, theoreticalMax: 8 + 3.5, maxTicks: 780,
+  cameraView: { position: [5, 2.2, 4], lookAt: [0, 0.9, 4] },
+  build: (world) => _buildJump(world, 8, 780),
+  buildProps: (world) => _buildJumpProps(world, [2, 4, 6]),
+  propVisuals: _jumpVisuals(8, [2, 4, 6]),
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: () => {}, done: _walkDone, fitness: _walkFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+
+// ============================================================
+// DODGE — avoid incoming projectiles. Fitness = HP remaining + time alive.
+// Each tick checks distance from torso to each projectile; close contact
+// drains hp. Brain output drives torso lateral lean to evade.
+// ============================================================
+
+function _spawnProjectile(world, { x, y, z, vx, vy, vz, radius = 0.15, mass = 1.5 }) {
+  const RAPIER = window.RAPIER;
+  const desc = RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z)
+    .setLinvel(vx, vy, vz).setLinearDamping(0.0);
+  const body = world.createRigidBody(desc);
+  const col = RAPIER.ColliderDesc.ball(radius)
+    .setDensity(mass / ((4 / 3) * Math.PI * Math.pow(radius, 3)))
+    .setFriction(0.3).setRestitution(0.3);
+  world.createCollider(col, body);
+  return body;
+}
+
+function _buildDodge(world, maxTicks, interval) {
+  const rag = window.brainEngine.createRagdoll(world);
+  return {
+    rag, maxTicks, hp: 100, nextProjectileAt: 60, interval,
+    target: { x: 0, y: 1.2, z: 0 },           // not used for fitness but observe wants something
+    projectileBodies: {}, projectileCount: 0,
+    rng: _mkRng(0xDEAD),
+  };
+}
+
+function _dodgeObs(env) {
+  // Substitute "target" obs with nearest projectile dx/dz so the brain
+  // knows what to avoid. Other inputs same as walk's balance subset.
+  const base = _observeRagdoll(env.rag);
+  const t = env.rag.bodies.torso.translation();
+  let nearestDx = 0, nearestDz = 0, nearestD = Infinity;
+  for (const body of Object.values(env.projectileBodies)) {
+    const p = body.translation();
+    const d = Math.hypot(p.x - t.x, p.z - t.z);
+    if (d < nearestD) { nearestD = d; nearestDx = (p.x - t.x) / 5; nearestDz = (p.z - t.z) / 5; }
+  }
+  return [...base, nearestDx, nearestDz];
+}
+
+function _dodgeStep(env, tick, world) {
+  // Spawn projectiles toward the bear at fixed cadence
+  if (tick >= env.nextProjectileAt) {
+    const theta = env.rng() * Math.PI * 2;
+    const r = 3.5;
+    const sx = Math.cos(theta) * r, sz = Math.sin(theta) * r;
+    const speed = 4.0;
+    const name = "proj" + env.projectileCount;
+    env.projectileBodies[name] = _spawnProjectile(world, {
+      x: sx, y: 1.2, z: sz,
+      vx: -Math.cos(theta) * speed, vy: 0, vz: -Math.sin(theta) * speed,
+    });
+    env.projectileCount += 1;
+    env.nextProjectileAt = tick + env.interval;
+  }
+  // Damage on close contact
+  const t = env.rag.bodies.torso.translation();
+  for (const body of Object.values(env.projectileBodies)) {
+    const p = body.translation();
+    const d = Math.hypot(p.x - t.x, p.y - t.y, p.z - t.z);
+    if (d < 0.35) { env.hp -= 4; }
+  }
+}
+
+function _dodgeDone(env) {
+  return env.rag.torsoTopY() < FALLEN_Y || env.hp <= 0;
+}
+function _dodgeFitness(env, tick) {
+  return (tick * PHYS_DT) + Math.max(0, env.hp) * 0.05;
+}
+
+const dodgeL1 = {
+  id: "dodge-L1", skillId: "dodge", level: 1, name: "Dodge · One projectile",
+  arch: WALK_ARCH, theoreticalMax: 8 + 5, maxTicks: 480,
+  cameraView: { position: [3.5, 2.0, 3.5], lookAt: [0, 0.9, 0] },
+  build: (world) => _buildDodge(world, 480, 180),
+  buildProps: () => ({}),
+  propVisuals: [],
+  dynamicPropFactory: (n) => n.startsWith("proj") ? { geom: { type: "sphere", radius: 0.15 }, color: 0xff5577, emissive: 0x661c2d } : null,
+  observe: _dodgeObs,
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: _dodgeStep, done: _dodgeDone, fitness: _dodgeFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.projectileBodies),
+};
+const dodgeL2 = {
+  id: "dodge-L2", skillId: "dodge", level: 2, name: "Dodge · Volley",
+  arch: WALK_ARCH, theoreticalMax: 10 + 5, maxTicks: 600,
+  cameraView: { position: [4, 2.2, 4], lookAt: [0, 0.9, 0] },
+  build: (world) => _buildDodge(world, 600, 90),
+  buildProps: () => ({}),
+  propVisuals: [],
+  dynamicPropFactory: (n) => n.startsWith("proj") ? { geom: { type: "sphere", radius: 0.15 }, color: 0xff5577, emissive: 0x661c2d } : null,
+  observe: _dodgeObs,
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: _dodgeStep, done: _dodgeDone, fitness: _dodgeFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.projectileBodies),
+};
+const dodgeL3 = {
+  id: "dodge-L3", skillId: "dodge", level: 3, name: "Dodge · Continuous wave",
+  arch: WALK_ARCH, theoreticalMax: 12 + 5, maxTicks: 720,
+  cameraView: { position: [4.5, 2.4, 4.5], lookAt: [0, 0.9, 0] },
+  build: (world) => _buildDodge(world, 720, 50),
+  buildProps: () => ({}),
+  propVisuals: [],
+  dynamicPropFactory: (n) => n.startsWith("proj") ? { geom: { type: "sphere", radius: 0.15 }, color: 0xff5577, emissive: 0x661c2d } : null,
+  observe: _dodgeObs,
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: _dodgeStep, done: _dodgeDone, fitness: _dodgeFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.projectileBodies),
+};
+
+// ============================================================
+// ATTACK — reach + strike a dummy. Same locomotion task as Walk
+// but the "target" is a physical capsule dummy. Contact = score.
+// ============================================================
+
+function _spawnDummy(world, { x, y, z }) {
+  const RAPIER = window.RAPIER;
+  // Kinematic so it doesn't fall or get pushed — but reports contact
+  const desc = RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z);
+  const body = world.createRigidBody(desc);
+  const col = RAPIER.ColliderDesc.capsule(0.25, 0.18).setFriction(0.5);
+  world.createCollider(col, body);
+  return body;
+}
+
+function _buildAttack(world, maxTicks, dummies) {
+  const rag = window.brainEngine.createRagdoll(world);
+  return {
+    rag, maxTicks, dummies,                // {name: {x,y,z}}
+    target: dummies[Object.keys(dummies)[0]] || { x: 0, y: 0.6, z: 1.5 },
+    hits: 0, hitTicks: {},
+  };
+}
+
+function _attackStep(env, tick) {
+  const t = env.rag.bodies.torso.translation();
+  for (const [name, pos] of Object.entries(env.dummies)) {
+    const d = Math.hypot(pos.x - t.x, pos.z - t.z);
+    if (d < 0.6) {
+      // Hit registered (rate-limited per dummy)
+      if ((env.hitTicks[name] || -100) < tick - 30) {
+        env.hitTicks[name] = tick;
+        env.hits += 1;
+      }
+    }
+  }
+}
+
+function _attackFitness(env, tick, alive) {
+  // Walk-like reward (distance to first dummy) + 2× hit count
+  const t = env.rag.bodies.torso.translation();
+  const progress = Math.max(0, Math.min(t.z, env.target.z));
+  return progress + env.hits * 2 + (alive ? 0.5 : 0);
+}
+
+function _attackDone(env) { return env.rag.torsoTopY() < FALLEN_Y; }
+
+function _dummyVisuals(dummies, color = 0xff5577, em = 0x661c2d) {
+  return Object.entries(dummies).map(([name, p]) => ({
+    name, geom: { type: "capsule", radius: 0.18, halfHeight: 0.25 },
+    color, emissive: em, static: { x: p.x, y: p.y, z: p.z },
+  }));
+}
+
+const attackL1 = {
+  id: "attack-L1", skillId: "attack", level: 1, name: "Attack · One dummy",
+  arch: WALK_ARCH, theoreticalMax: 2 + 6, maxTicks: 480,
+  cameraView: { position: [3.5, 1.8, 1.8], lookAt: [0, 0.9, 1] },
+  build: (world) => _buildAttack(world, 480, { d1: { x: 0, y: 0.6, z: 2 } }),
+  buildProps(world) { return { d1: _spawnDummy(world, { x: 0, y: 0.6, z: 2 }) }; },
+  propVisuals: _dummyVisuals({ d1: { x: 0, y: 0.6, z: 2 } }),
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: _attackStep, done: _attackDone, fitness: _attackFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+const attackL2 = {
+  id: "attack-L2", skillId: "attack", level: 2, name: "Attack · Mid-range",
+  arch: WALK_ARCH, theoreticalMax: 4 + 8, maxTicks: 600,
+  cameraView: { position: [4, 1.9, 2.5], lookAt: [0, 0.9, 2] },
+  build: (world) => _buildAttack(world, 600, { d1: { x: 0, y: 0.6, z: 4 } }),
+  buildProps(world) { return { d1: _spawnDummy(world, { x: 0, y: 0.6, z: 4 }) }; },
+  propVisuals: _dummyVisuals({ d1: { x: 0, y: 0.6, z: 4 } }),
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: _attackStep, done: _attackDone, fitness: _attackFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+const attackL3 = {
+  id: "attack-L3", skillId: "attack", level: 3, name: "Attack · Range",
+  arch: WALK_ARCH, theoreticalMax: 6 + 10, maxTicks: 720,
+  cameraView: { position: [4.5, 2.0, 3.5], lookAt: [0, 0.9, 3] },
+  build: (world) => _buildAttack(world, 720, { d1: { x: 0, y: 0.6, z: 6 } }),
+  buildProps(world) { return { d1: _spawnDummy(world, { x: 0, y: 0.6, z: 6 }) }; },
+  propVisuals: _dummyVisuals({ d1: { x: 0, y: 0.6, z: 6 } }),
+  observe: (env) => _observeWalk(env.rag, env.target),
+  act: (env, out) => _applyTorques(env.rag, out),
+  envStep: _attackStep, done: _attackDone, fitness: _attackFitness,
+  snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+};
+
+// ============================================================
+// COMBO — multiple dummies in a row. Hit them sequentially.
+// ============================================================
+const combo1 = { d1: { x: -0.6, y: 0.6, z: 2 }, d2: { x: 0.6, y: 0.6, z: 2 } };
+const combo2 = { d1: { x: -0.8, y: 0.6, z: 2 }, d2: { x: 0.8, y: 0.6, z: 3 }, d3: { x: -0.4, y: 0.6, z: 4 } };
+const combo3 = { d1: { x: -1.0, y: 0.6, z: 2 }, d2: { x: 1.0, y: 0.6, z: 3 }, d3: { x: -0.8, y: 0.6, z: 4 }, d4: { x: 0.6, y: 0.6, z: 5 } };
+
+function _comboEnv(id, level, dummies, name, maxTicks, theoreticalMax) {
+  const lastZ = Math.max(...Object.values(dummies).map((d) => d.z));
+  return {
+    id, skillId: "combo", level, name,
+    arch: WALK_ARCH, theoreticalMax, maxTicks,
+    cameraView: { position: [4, 2.0, lastZ / 2 + 1], lookAt: [0, 0.9, lastZ / 2] },
+    build: (world) => {
+      const rag = window.brainEngine.createRagdoll(world);
+      return { rag, maxTicks, dummies, target: dummies.d1, hits: 0, hitTicks: {}, props: {} };
+    },
+    buildProps(world) {
+      const props = {};
+      for (const [n, p] of Object.entries(dummies)) props[n] = _spawnDummy(world, p);
+      return props;
+    },
+    propVisuals: _dummyVisuals(dummies, 0xff8b45, 0x6d3818),
+    observe: (env) => _observeWalk(env.rag, env.target),
+    act: (env, out) => _applyTorques(env.rag, out),
+    envStep: _attackStep, done: _attackDone, fitness: _attackFitness,
+    snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
+  };
+}
+const comboL1 = _comboEnv("combo-L1", 1, combo1, "Combo · 2-hit", 540, 2 + 6);
+const comboL2 = _comboEnv("combo-L2", 2, combo2, "Combo · 3-hit", 660, 4 + 9);
+const comboL3 = _comboEnv("combo-L3", 3, combo3, "Combo · 4-hit", 780, 5 + 12);
+
+// All 21 envs are real — no placeholders remaining.
 
 const ENV_REGISTRY = {
   "balance-L1": balanceL1,
@@ -643,19 +947,18 @@ const ENV_REGISTRY = {
   "run-L1":     runL1,
   "run-L2":     runL2,
   "run-L3":     runL3,
-  // Placeholders for skills still to ship in future rounds
-  "jump-L1":   _placeholder("jump", 1),
-  "jump-L2":   _placeholder("jump", 2),
-  "jump-L3":   _placeholder("jump", 3),
-  "dodge-L1":  _placeholder("dodge", 1),
-  "dodge-L2":  _placeholder("dodge", 2),
-  "dodge-L3":  _placeholder("dodge", 3),
-  "attack-L1": _placeholder("attack", 1),
-  "attack-L2": _placeholder("attack", 2),
-  "attack-L3": _placeholder("attack", 3),
-  "combo-L1":  _placeholder("combo", 1),
-  "combo-L2":  _placeholder("combo", 2),
-  "combo-L3":  _placeholder("combo", 3),
+  "jump-L1":    jumpL1,
+  "jump-L2":    jumpL2,
+  "jump-L3":    jumpL3,
+  "dodge-L1":   dodgeL1,
+  "dodge-L2":   dodgeL2,
+  "dodge-L3":   dodgeL3,
+  "attack-L1":  attackL1,
+  "attack-L2":  attackL2,
+  "attack-L3":  attackL3,
+  "combo-L1":   comboL1,
+  "combo-L2":   comboL2,
+  "combo-L3":   comboL3,
 };
 
 function getEnv(skillId, level) {
