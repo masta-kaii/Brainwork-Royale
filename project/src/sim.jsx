@@ -243,6 +243,12 @@ function createBattleSim(seed, you, opts) {
       cls,
       color: c.color,
       isYou: i === 0,
+      // Reference to an exported brain JSON for the player. If a trained
+      // locomotion brain is attached we run inference each step and use
+      // its output magnitude to modulate move cooldown — the trained
+      // bear visibly moves more decisively than an untrained one.
+      brain: i === 0 ? (you.brain || null) : null,
+      brainBoost: 1.0,                              // updated each tick if brain present
       x: sx, y: sy,                 // continuous floats
       prevX: sx, prevY: sy,
       lastCellX: sx, lastCellY: sy, // for obstacle-on-entry detection
@@ -337,9 +343,32 @@ function createBattleSim(seed, you, opts) {
         a.path = bfsPath(grid, cols, rows, [cellX, cellY], goal);
       }
 
+      // ---- Brain inference (player agent only, if a trained brain is attached) ----
+      // The exported locomotion brain runs forward with a synthesized
+      // observation; its output magnitude becomes a speed multiplier so
+      // the trained bear visibly moves with more conviction.
+      if (a.brain && a.path && a.path.length > 1) {
+        const fe = window.brainEngine?.forward;
+        if (fe) {
+          // 12 zeros (no physics torso/joint info in battle) + 2 target offsets
+          const [wx0, wy0] = a.path[1];
+          const inputs = new Array(a.brain.arch.inputs).fill(0);
+          if (inputs.length >= 14) {
+            inputs[12] = (wx0 - a.x) / 10;
+            inputs[13] = (wy0 - a.y) / 10;
+          }
+          const out = fe(a.brain, inputs);
+          let mag = 0;
+          for (const o of out) mag += Math.abs(o);
+          mag /= out.length || 1;
+          // Map [0..1] → [1.0..1.5] — modest, observable speed bonus
+          a.brainBoost = 1.0 + Math.min(0.5, mag * 0.5);
+        }
+      }
+
       // ---- Advance toward the next waypoint ----
       if (a.path && a.path.length > 1) {
-        let stepDist = a.speedPerTick;
+        let stepDist = a.speedPerTick * (a.brainBoost || 1);
         if ((a.boostUntil || 0) > tick) stepDist *= 2;
         if ((a.slowUntil || 0)  > tick) stepDist *= 0.5;
 
