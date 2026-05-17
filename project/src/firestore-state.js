@@ -303,6 +303,18 @@ async function saveSkill(uid, skillId, partial) {
 async function saveBrain(uid, key, brainJson) {
   try {
     const f = fb();
+    // Monotonic save: only overwrite if the new brain is at least as good
+    // as the previously persisted one. Prevents a noisy bad pack from
+    // clobbering a hard-won brain.
+    const newFit = brainJson?.meta?.fitness ?? -Infinity;
+    const existing = await f.getDoc(brainRef(uid, key));
+    if (existing.exists()) {
+      const oldFit = existing.data()?.meta?.fitness ?? -Infinity;
+      if (newFit < oldFit) {
+        console.info(`[dataLayer] saveBrain(${key}) skipped — existing fitness ${oldFit.toFixed(2)} >= new ${newFit.toFixed(2)}`);
+        return;
+      }
+    }
     await f.setDoc(brainRef(uid, key), {
       ...brainJson,
       updatedAt: f.serverTimestamp(),

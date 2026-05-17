@@ -341,7 +341,38 @@ function _buildWalk(world, targetZ) {
     targetZ,
     target: { x: 0, y: 0.1, z: targetZ },
     reached: false,
+    // Shaped-fitness accumulators — updated by _walkShapedFitness each
+    // tick (see envStep wrapper below).
+    forwardSum: 0,            // accumulated max(0, Δz_per_tick)
+    sidewaysPenalty: 0,       // accumulated 0.3 * |torso.x| per tick
+    upTicks: 0,               // ticks where torso stayed upright
+    lastZ: null,
   };
+}
+
+// Per-tick shaping accumulator. Called from envStep so the running
+// reward components stay current. Has to live OUTSIDE fitness() because
+// fitness() is only called once at episode end.
+function _walkShapingStep(env) {
+  const t = env.rag.bodies.torso.translation();
+  if (env.lastZ != null) {
+    env.forwardSum += Math.max(0, t.z - env.lastZ);
+  }
+  env.lastZ = t.z;
+  env.sidewaysPenalty += Math.abs(t.x) * 0.01;   // ~0.3 / tick at |x|=30
+  if (env.rag.torsoTopY() >= FALLEN_Y) env.upTicks += 1;
+}
+
+function _walkFitnessShaped(env, tick, alive) {
+  // Total reward components:
+  //  - cumulative forward progress (rewards continuous motion, not just
+  //    final position)
+  //  - sideways drift penalty (encourages straight-line walking)
+  //  - upright bonus scaled by fraction of episode survived
+  //  - reach bonus only if the bear got there
+  const reachBonus = env.reached ? 3 : 0;
+  const uprightBonus = (env.upTicks / Math.max(1, env.rag.maxTicks || tick)) * 1.5;
+  return env.forwardSum + reachBonus + uprightBonus - env.sidewaysPenalty;
 }
 
 // Static target-cone visual — same for all walk levels, just at different Z
@@ -357,23 +388,30 @@ function _walkPropVisuals(targetZ) {
   ];
 }
 
+const _walkTrainerConfig = {
+  population: 32, mutationRate: 0.12, sigma: 0.35, elitism: 6,
+};
+const _walkWarmup = 20;
+
 const walkL1 = {
   id: "walk-L1",
   skillId: "walk",
   level: 1,
   name: "Walk · Straight path",
   arch: WALK_ARCH,
-  theoreticalMax: 3 + 3.5,                   // target z + reach bonus + upright
-  maxTicks: 480,                             // 8 s
+  theoreticalMax: 3 + 3.5 + 1.5,
+  maxTicks: 480,
+  warmupTicks: _walkWarmup,
+  trainerConfig: _walkTrainerConfig,
   cameraView: { position: [3.2, 1.8, 1.8], lookAt: [0, 0.9, 1.5] },
-  build: (world) => _buildWalk(world, 3),
+  build: (world) => { const e = _buildWalk(world, 3); e.maxTicks = 480; return e; },
   buildProps: () => ({}),
   propVisuals: _walkPropVisuals(3),
   observe: (env) => _observeWalk(env.rag, env.target),
   act: (env, out) => _applyTorques(env.rag, out),
-  envStep: () => {},
+  envStep: (env) => _walkShapingStep(env),
   done: _walkDone,
-  fitness: _walkFitness,
+  fitness: _walkFitnessShaped,
   snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
 };
 
@@ -383,12 +421,13 @@ const walkL2 = {
   level: 2,
   name: "Walk · Path with pendulum",
   arch: WALK_ARCH,
-  theoreticalMax: 5 + 3.5,
-  maxTicks: 600,                             // 10 s
+  theoreticalMax: 5 + 3.5 + 1.5,
+  maxTicks: 600,
+  warmupTicks: _walkWarmup,
+  trainerConfig: _walkTrainerConfig,
   cameraView: { position: [4.0, 2.0, 2.5], lookAt: [0, 0.9, 2.5] },
-  build: (world) => _buildWalk(world, 5),
+  build: (world) => { const e = _buildWalk(world, 5); e.maxTicks = 600; return e; },
   buildProps(world) {
-    // Pendulum hangs over the path at z=2.5 (midway), swings sideways into the bear
     const p = _makePendulum(world, {
       anchorX: -1.2, anchorY: 2.6, anchorZ: 2.5,
       chainLen: 1.1, ballRadius: 0.20, ballMass: 5.0, initialKick: 2.2,
@@ -402,9 +441,9 @@ const walkL2 = {
   ],
   observe: (env) => _observeWalk(env.rag, env.target),
   act: (env, out) => _applyTorques(env.rag, out),
-  envStep: () => {},
+  envStep: (env) => _walkShapingStep(env),
   done: _walkDone,
-  fitness: _walkFitness,
+  fitness: _walkFitnessShaped,
   snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
 };
 
@@ -414,10 +453,12 @@ const walkL3 = {
   level: 3,
   name: "Walk · Path with two pendulums",
   arch: WALK_ARCH,
-  theoreticalMax: 7 + 3.5,
-  maxTicks: 720,                             // 12 s
+  theoreticalMax: 7 + 3.5 + 1.5,
+  maxTicks: 720,
+  warmupTicks: _walkWarmup,
+  trainerConfig: _walkTrainerConfig,
   cameraView: { position: [4.5, 2.2, 3.5], lookAt: [0, 0.9, 3.5] },
-  build: (world) => _buildWalk(world, 7),
+  build: (world) => { const e = _buildWalk(world, 7); e.maxTicks = 720; return e; },
   buildProps(world) {
     // Two pendulums along the path at different Z and opposite sides
     const a = _makePendulum(world, {
@@ -442,9 +483,9 @@ const walkL3 = {
   ],
   observe: (env) => _observeWalk(env.rag, env.target),
   act: (env, out) => _applyTorques(env.rag, out),
-  envStep: () => {},
+  envStep: (env) => _walkShapingStep(env),
   done: _walkDone,
-  fitness: _walkFitness,
+  fitness: _walkFitnessShaped,
   snapshot: (env) => _snapshotRagdoll(env.rag, {}, env.props),
 };
 

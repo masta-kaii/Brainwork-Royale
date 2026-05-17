@@ -240,34 +240,35 @@ function evalEnv(env, brain, opts = {}) {
   const { worldFactory = makeWorld, recordTrace = false } = opts;
   const world = worldFactory();
   const envState = env.build(world);
-  // Build static props (pendulums, anchors, etc.) once per episode.
-  // Stored on envState.props so envStep + snapshot can read them.
   if (env.buildProps) {
     envState.props = env.buildProps(world);
   }
+
+  // Warmup: run N physics ticks with zero brain output so the ragdoll
+  // can settle from its spawn pose. Noisy initial weights would
+  // otherwise knock it over before the timed episode begins.
+  const warmupTicks = env.warmupTicks || 0;
+  const zeros = new Array(env.arch?.outputs || 4).fill(0);
+  for (let w = 0; w < warmupTicks; w++) {
+    env.act(envState, zeros);
+    world.step();
+  }
+
   const trace = recordTrace ? [env.snapshot(envState)] : null;
   let ticks = 0;
   let alive = true;
 
   while (ticks < env.maxTicks && alive) {
-    // 1. env-specific perturbation / scripted events — pass `world` so envs
-    //    can spawn dynamic props (e.g. falling debris in Balance L3)
     env.envStep(envState, ticks, world);
-    // 2. observe
     const obs = env.observe(envState);
-    // 3. NN forward
     const out = forward(brain, obs);
-    // 4. apply actions to bodies
     env.act(envState, out);
-    // 5. physics step
     world.step();
     ticks++;
     if (recordTrace && ticks % TRACE_EVERY === 0) trace.push(env.snapshot(envState));
-    // 6. termination check
     if (env.done(envState, ticks)) alive = false;
   }
 
-  // Dispose physics bodies (best-effort — Rapier reclaims when world is freed)
   if (envState.rag) destroyRagdoll(world, envState.rag);
   world.free?.();
 
@@ -337,13 +338,20 @@ function evalEnvBatch(env, brains, opts = {}) {
 // ============================================================
 function startTrainer({
   env,                       // env spec from training-envs.getEnv(skill, level)
-  population = 16,
-  visPopulation = 1,         // number of top brains to record traces for (used by the population view)
+  population: popOverride = null,
+  visPopulation = 1,
   seedBrain = null,
-  onGenerationDone = null,   // ({ gen, bestFitness, avgFitness, bestBrain, traces[], env }) => void
+  onGenerationDone = null,   // ({ gen, bestFitness, avgFitness, stdFitness, bestBrain, traces[], env })
 }) {
   if (!env) throw new Error("startTrainer requires { env }");
   const arch = env.arch || DEFAULT_ARCH;
+  // Per-env tuning hooks — Walk uses these to dial up population, soften
+  // mutation, and bump elitism so good gaits don't get smashed away.
+  const cfg = env.trainerConfig || {};
+  const population = popOverride ?? cfg.population ?? 16;
+  const mutationRate = cfg.mutationRate ?? 0.18;
+  const mutationSigma = cfg.sigma ?? 0.45;
+  const elitism = cfg.elitism ?? 4;
 
   // Initialise population. If we have a seed brain compatible with the env's
   // arch, use it; otherwise discard (different inputs/outputs) and start fresh.
@@ -394,16 +402,19 @@ function startTrainer({
 
     const bestFitness = pop[0].fitness;
     const avgFitness = pop.reduce((s, p) => s + p.fitness, 0) / pop.length;
+    const variance = pop.reduce((s, p) => s + Math.pow(p.fitness - avgFitness, 2), 0) / pop.length;
+    const stdFitness = Math.sqrt(variance);
     const bestBrain = cloneBrain(pop[0].brain);
 
-    onGenerationDone?.({ gen, bestFitness, avgFitness, bestBrain, traces, env });
+    onGenerationDone?.({ gen, bestFitness, avgFitness, stdFitness, bestBrain, traces, env });
 
-    // Breed: keep top 4 elite, rest are mutated copies of top 2
-    const elite = pop.slice(0, 4).map((p) => ({ brain: cloneBrain(p.brain), fitness: 0 }));
+    // Breed: keep top-N elite, rest are mutated copies of the top 4
+    const elite = pop.slice(0, elitism).map((p) => ({ brain: cloneBrain(p.brain), fitness: 0 }));
     const next = [...elite];
+    const parentPool = pop.slice(0, Math.min(4, pop.length));
     for (let i = elite.length; i < pop.length; i++) {
-      const parent = pop[Math.floor(Math.random() * 2)].brain;
-      next.push({ brain: mutate(parent, { rate: 0.18, sigma: 0.45 }), fitness: 0 });
+      const parent = parentPool[Math.floor(Math.random() * parentPool.length)].brain;
+      next.push({ brain: mutate(parent, { rate: mutationRate, sigma: mutationSigma }), fitness: 0 });
     }
     pop = next;
 
