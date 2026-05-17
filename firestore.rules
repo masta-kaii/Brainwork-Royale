@@ -1,0 +1,104 @@
+rules_version = '2';
+
+// ============================================================
+// BRAINWORK ROYALE — FIRESTORE SECURITY RULES
+// Default deny. Read/write only via explicit allow rules below.
+// Anything sensitive (quest verification, match resolution, brain
+// weight updates) is gated to Cloud Functions via `allow ... if false`.
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    // Block any change to the listed fields
+    function didNotChange(fields) {
+      return !fields.toSet().hasAny(request.resource.data.diff(resource.data).affectedKeys());
+    }
+
+    // ---------- /users/{userId} ----------
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      // Players bootstrap their own doc on signup
+      allow create: if isOwner(userId)
+        && request.resource.data.role == 'player';
+      // Players can update their own doc but cannot promote themselves.
+      // NOTE: currency + stats are owner-writable until the project moves
+      // to Blaze and Cloud Functions can mediate them. This is the anti-cheat
+      // surface we explicitly accept on the free tier.
+      allow update: if isOwner(userId)
+        && didNotChange(['role', 'createdAt']);
+      allow delete: if isAdmin();
+
+      // ----- subcollections -----
+      match /character/{docId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId);
+        allow delete: if isAdmin();
+      }
+      match /brain/{docId} {
+        // Brain weights: owner can READ; only Functions (Admin SDK) writes.
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if false;
+      }
+      match /quests/{docId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId)
+          && request.resource.data.status == 'active'
+          && request.resource.data.rewardClaimed == false;
+        // Quest completion is verified server-side — clients cannot self-grant rewards
+        allow update, delete: if false;
+      }
+
+      // Skills — owner-write for now (training is a coin sink, anti-cheat
+      // will move to Cloud Functions once the project is on Blaze).
+      match /skills/{docId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId);
+        allow delete: if isAdmin();
+      }
+
+      // Brains — real NN weights from physics-based training. Owner-write
+      // for now; client-side training is local-only, no cheating surface.
+      // Schema: { schema, arch, weights: { w1, b1, w2, b2 }, meta, updatedAt }
+      match /brains/{key} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId);
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ---------- /matches/{matchId} ----------
+    match /matches/{matchId} {
+      // Public read so anyone can watch replays
+      allow read: if true;
+      // Writes only from Functions
+      allow write: if false;
+
+      match /replay {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
+    // ---------- /baseModels/{version} ----------
+    match /baseModels/{version} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- /config/balance ----------
+    // Admin-tuned balance levers — clients read at boot
+    match /config/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Default: everything else denied (no fall-through allow)
+  }
+}

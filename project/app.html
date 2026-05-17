@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Brainwork Royale</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="root">
+    <div style="position:fixed; inset:0; display:grid; place-items:center; background:#07080d; color:#cdd2ee; font-family: 'JetBrains Mono', monospace;">
+      <div style="text-align:center">
+        <div style="width:48px; height:48px; border-radius:12px; background:linear-gradient(135deg, #5df2d6, #2fa893); display:grid; place-items:center; margin: 0 auto 18px; color:#07080d; font-weight:800; font-size:24px; box-shadow: 0 0 30px -4px rgba(93,242,214,0.4)">B</div>
+        <div style="font-size:11px; letter-spacing:0.22em; color:#5df2d6">BRAINWORK · ROYALE</div>
+        <div id="boot-msg" style="font-size:11px; letter-spacing:0.16em; color:#8b91b8; margin-top:14px">BOOTING WARDEN'S DECK…</div>
+        <div style="width: 240px; height: 3px; background:#1c2138; border-radius:999px; margin: 12px auto 0; overflow:hidden">
+          <div id="boot-bar" style="width:0%; height:100%; background:#5df2d6; box-shadow: 0 0 12px rgba(93,242,214,0.5); transition: width 240ms"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- React + Babel (pinned, production builds) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- Three.js (ESM) + GLTFLoader + OrbitControls + PEP-Smol preload -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    window.THREE = THREE;
+    window.GLTFLoader = GLTFLoader;
+    window.OrbitControls = OrbitControls;
+
+    // Pre-load PEP-Smol once for the whole app
+    const bootMsg = document.getElementById('boot-msg');
+    const bootBar = document.getElementById('boot-bar');
+    const loader = new GLTFLoader();
+    try {
+      const gltf = await new Promise((resolve, reject) => {
+        loader.load('assets/pep-smol.gltf',
+          resolve,
+          (xhr) => {
+            const pct = xhr.total ? Math.round(xhr.loaded / xhr.total * 100) : Math.min(99, Math.round(xhr.loaded / 1.5e5));
+            if (bootMsg) bootMsg.textContent = `DECRYPTING RIG · ${pct}%`;
+            if (bootBar) bootBar.style.width = pct + '%';
+          },
+          reject
+        );
+      });
+      window.PEP_BASE = gltf;
+      window.PEP_READY = true;
+    } catch (e) {
+      console.error('PEP load failed', e);
+      window.PEP_READY = true; // fail open; scene falls back to stickmen
+      window.PEP_FAILED = true;
+    }
+    window.dispatchEvent(new Event('app-ready'));
+  </script>
+
+  <!-- Firebase SDK (modular v11, ESM). Loads before JSX so window.firebase is ready. -->
+  <script type="module" src="src/firebase.js"></script>
+
+  <!-- Rapier3D physics (wasm-bundled compat build). Init is async; we
+       expose RAPIER on window after init and dispatch 'rapier-ready' so
+       any script that needs physics can wait for it. -->
+  <script type="module">
+    // Build the URL at runtime via concat. Otherwise the literal
+    // "name@version" pattern (e.g. "compat@0.12.0") in the HTML source gets
+    // mangled to "[email protected]" by Cloudflare email-obfuscation,
+    // privacy browser extensions, or corporate proxies. Concat at runtime
+    // makes the pattern never appear as static text.
+    const PKG = "@dimforge/rapier3d-compat";
+    const VER = "0.12.0";
+    const AT = String.fromCharCode(64);  // "@" without writing it as a literal
+    const PATH = "/rapier.es.js";
+    const URLS = [
+      "https://cdn.jsdelivr.net/npm/" + PKG + AT + VER + PATH,
+      "https://unpkg.com/" + PKG + AT + VER + PATH,
+    ];
+
+    const FAIL_TIMEOUT = 25000;
+    const timer = setTimeout(() => {
+      if (!window.RAPIER_READY) {
+        console.error("Rapier init timed out after", FAIL_TIMEOUT, "ms");
+        window.RAPIER_READY = true;
+        window.RAPIER_FAILED = true;
+        window.RAPIER_ERROR = new Error("init-timeout");
+        window.dispatchEvent(new Event("rapier-ready"));
+      }
+    }, FAIL_TIMEOUT);
+
+    let lastErr = null;
+    let RAPIER = null;
+    for (const url of URLS) {
+      try {
+        const mod = await import(/* @vite-ignore */ url);
+        RAPIER = mod.default || mod;
+        await RAPIER.init();
+        console.log("Rapier loaded from", url);
+        break;
+      } catch (e) {
+        console.warn("Rapier import failed from", url, "—", e.message);
+        lastErr = e;
+        RAPIER = null;
+      }
+    }
+    clearTimeout(timer);
+    if (RAPIER) {
+      window.RAPIER = RAPIER;
+      window.RAPIER_READY = true;
+    } else {
+      console.error("Rapier failed from all CDNs:", lastErr);
+      window.RAPIER_READY = true;
+      window.RAPIER_FAILED = true;
+      window.RAPIER_ERROR = lastErr || new Error("all-cdns-failed");
+    }
+    window.dispatchEvent(new Event("rapier-ready"));
+  </script>
+
+  <!-- Data layer (Firestore wrapper) — must come before any JSX that uses dataLayer.* -->
+  <script type="text/babel" src="src/firestore-state.js"></script>
+
+  <!-- Components -->
+  <script type="text/babel" src="src/bears.jsx"></script>
+  <script type="text/babel" src="src/ui.jsx"></script>
+  <script type="text/babel" src="src/sim.jsx"></script>
+  <script type="text/babel" src="src/scene3d.jsx"></script>
+  <!-- Skill tree (declarative graph) before training-envs which references nothing
+       runtime-y, before brain-engine which references trainingEnvs at evalBalance call -->
+  <script type="text/babel" src="src/skill-tree.jsx"></script>
+  <script type="text/babel" src="src/brain-engine.jsx"></script>
+  <script type="text/babel" src="src/training-envs.jsx"></script>
+  <script type="text/babel" src="src/home.jsx"></script>
+  <script type="text/babel" src="src/quests.jsx"></script>
+  <script type="text/babel" src="src/battle.jsx"></script>
+  <script type="text/babel" src="src/replays.jsx"></script>
+  <script type="text/babel" src="src/brain.jsx"></script>
+  <script type="text/babel" src="src/skill-trainer.jsx"></script>
+  <script type="text/babel" src="src/training.jsx"></script>
+  <script type="text/babel" src="src/app.jsx"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+chats/
+project/uploads/
+project/screens/
+README.md
+
+# FWOG Memory Core (local only)
+memory core/
+
+# Firebase backend (deployed via firebase CLI, not Vercel)
+firebase.json
+.firebaserc
+firestore.rules
+firestore.indexes.json
+storage.rules
+functions/

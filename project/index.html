@@ -1,0 +1,1709 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Brainwork Royale — Train the Brain. Win the Maze.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* ========== LANDING-SPECIFIC LAYOUT ==========
+       The app shell in styles.css assumes a fixed-height 2-col app.
+       Landing is a scrolling marketing page, so we override .app and
+       html/body overflow to allow vertical scroll.
+       ============================================================ */
+    html, body, #landing { overflow: auto; height: auto; min-height: 100%; }
+    body {
+      background:
+        radial-gradient(1400px 800px at 80% -10%, oklch(0.5 0.15 175 / 0.22), transparent 65%),
+        radial-gradient(1000px 600px at -10% 30%, oklch(0.5 0.2 310 / 0.16), transparent 70%),
+        radial-gradient(900px 600px at 100% 80%, oklch(0.6 0.18 75 / 0.10), transparent 70%),
+        var(--bg-0);
+      background-attachment: fixed;
+    }
+
+    /* ===== Top nav ===== */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      backdrop-filter: blur(14px);
+      background: oklch(0.05 0.02 260 / 0.7);
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .nav__inner {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .brand__mark {
+      width: 34px; height: 34px; border-radius: 9px;
+      background: linear-gradient(135deg, var(--mint), var(--mint-dim));
+      display: grid; place-items: center;
+      color: var(--bg-0); font-family: var(--font-display);
+      font-weight: 800; font-size: 17px;
+      box-shadow: 0 0 0 1px var(--mint-dim), 0 0 22px -4px var(--mint-glow);
+    }
+    .brand__text {
+      font-family: var(--font-display); font-weight: 700;
+      letter-spacing: 0.04em; font-size: 14px;
+      color: var(--ink-0); line-height: 1.05;
+    }
+    .brand__text small {
+      display: block; color: var(--mint); font-size: 10px;
+      font-weight: 600; letter-spacing: 0.22em; margin-top: 1px;
+    }
+    .nav__links {
+      display: flex; gap: 4px; flex: 1; justify-content: center;
+    }
+    .nav__link {
+      padding: 8px 14px; border-radius: 8px;
+      font-family: var(--font-display); font-size: 11px; font-weight: 600;
+      letter-spacing: 0.1em; color: var(--ink-2);
+      text-transform: uppercase; cursor: pointer;
+      transition: color 120ms, background 120ms;
+      text-decoration: none;
+    }
+    .nav__link:hover { color: var(--ink-0); background: var(--bg-2); }
+    .nav__cta { display: flex; gap: 8px; }
+    @media (max-width: 760px) {
+      .nav__inner { padding: 12px 16px; }
+      .nav__links { display: none; }
+    }
+
+    /* ===== Page container ===== */
+    .container {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 0 32px;
+    }
+    @media (max-width: 760px) { .container { padding: 0 16px; } }
+
+    /* ===== HERO ===== */
+    .hero {
+      padding: 56px 0 32px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: stretch;
+      min-height: 720px;
+    }
+    @media (max-width: 1000px) {
+      .hero { grid-template-columns: 1fr; gap: 24px; padding: 32px 0; }
+    }
+
+    .hero__copy { display: flex; flex-direction: column; gap: 20px; padding-top: 28px; }
+    .hero__pre {
+      display: inline-flex; align-items: center; gap: 10px;
+      font-family: var(--font-display); font-size: 11px;
+      letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--mint);
+      background: oklch(0.85 0.15 175 / 0.08);
+      border: 1px solid var(--mint-dim);
+      padding: 6px 12px; border-radius: 999px;
+      width: fit-content;
+    }
+    .hero__pre .chip__dot { background: var(--mint); box-shadow: 0 0 12px var(--mint); }
+    .hero__title {
+      font-family: var(--font-display);
+      font-size: clamp(36px, 5.5vw, 64px);
+      font-weight: 800;
+      color: var(--ink-0);
+      line-height: 1.02;
+      letter-spacing: -0.02em;
+      margin: 0;
+      text-wrap: balance;
+    }
+    .hero__title em {
+      font-style: normal;
+      background: linear-gradient(180deg, var(--mint), var(--mint-dim));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero__sub {
+      color: var(--ink-2);
+      font-size: 17px;
+      line-height: 1.55;
+      max-width: 480px;
+      text-wrap: pretty;
+    }
+
+    /* Inline login card */
+    .login-card {
+      background: var(--bg-1);
+      border: 1px solid var(--line);
+      border-radius: var(--r-xl);
+      padding: 22px;
+      max-width: 440px;
+      box-shadow: 0 30px 60px -30px oklch(0 0 0 / 0.6);
+    }
+    .login-card__head {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; margin-bottom: 14px;
+    }
+    .login-card__title {
+      font-family: var(--font-display); font-size: 13px;
+      font-weight: 700; color: var(--ink-0);
+      letter-spacing: 0.04em;
+    }
+    .login-card__switch {
+      display: inline-flex; padding: 3px;
+      background: var(--bg-3); border-radius: 999px;
+      border: 1px solid var(--line-soft);
+    }
+    .login-card__switch button {
+      padding: 5px 11px; border: 0; background: transparent;
+      color: var(--ink-2); font-family: var(--font-display);
+      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+      border-radius: 999px; cursor: pointer;
+    }
+    .login-card__switch button.is-on { background: var(--mint); color: var(--bg-0); }
+    .login-card__providers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+    .prov-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 10px 12px;
+      background: var(--bg-2); border: 1px solid var(--line);
+      color: var(--ink-1); border-radius: 10px;
+      font-family: var(--font-body); font-weight: 600; font-size: 13px;
+      cursor: pointer; transition: background 120ms, border-color 120ms;
+    }
+    .prov-btn:hover { background: var(--bg-3); border-color: var(--ink-4); }
+    .prov-btn svg { width: 16px; height: 16px; }
+    .login-card__or {
+      display: flex; align-items: center; gap: 10px;
+      color: var(--ink-3); font-family: var(--font-display);
+      font-size: 10px; letter-spacing: 0.2em; margin: 6px 0 14px;
+    }
+    .login-card__or::before, .login-card__or::after {
+      content: ""; flex: 1; height: 1px; background: var(--line-soft);
+    }
+    .field { display: grid; gap: 6px; margin-bottom: 10px; }
+    .field__label {
+      font-family: var(--font-display); font-size: 10px;
+      letter-spacing: 0.18em; color: var(--ink-3); text-transform: uppercase;
+    }
+    .field__input {
+      padding: 11px 14px;
+      background: var(--bg-0); border: 1px solid var(--line);
+      border-radius: 10px; color: var(--ink-0); font-size: 14px;
+      font-family: var(--font-body); width: 100%;
+      transition: border-color 120ms, box-shadow 120ms;
+    }
+    .field__input:focus {
+      outline: none; border-color: var(--mint);
+      box-shadow: 0 0 0 3px oklch(0.85 0.15 175 / 0.18);
+    }
+    .field__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .checkbox {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--ink-2); cursor: pointer; user-select: none;
+    }
+    .checkbox input { accent-color: oklch(0.85 0.15 175); }
+    .forgot {
+      font-family: var(--font-display); font-size: 11px;
+      color: var(--mint); cursor: pointer; letter-spacing: 0.05em;
+      background: none; border: 0; padding: 0;
+    }
+    .login-card .btn--primary { margin-top: 6px; }
+    .login-card__foot {
+      margin-top: 12px; font-size: 12px; color: var(--ink-3);
+      text-align: center;
+    }
+    .login-card__foot a { color: var(--mint); text-decoration: none; cursor: pointer; }
+
+    /* ===== Character viewer ===== */
+    .viewer {
+      position: relative;
+      background: linear-gradient(180deg, #060810 0%, #0a0d1a 100%);
+      border: 1px solid var(--line);
+      border-radius: var(--r-xl);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 620px;
+      box-shadow: 0 30px 60px -30px oklch(0 0 0 / 0.6),
+                  inset 0 0 0 1px oklch(0.85 0.15 175 / 0.05);
+    }
+    .viewer__top {
+      position: absolute; top: 12px; left: 12px; right: 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; z-index: 3; pointer-events: none;
+    }
+    .viewer__pill {
+      pointer-events: auto;
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 11px;
+      background: oklch(0 0 0 / 0.55);
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--line-soft);
+      border-radius: 999px;
+      font-family: var(--font-display); font-size: 10px;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--ink-1);
+    }
+    .viewer__stage {
+      position: relative;
+      height: 460px;          /* fixed — breaks the canvas/layout feedback loop */
+      cursor: grab;
+      overflow: hidden;
+    }
+    .viewer__stage:active { cursor: grabbing; }
+    .viewer__stage canvas {
+      position: absolute;
+      inset: 0;
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+
+    .viewer__loader {
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      background: oklch(0.05 0.02 260 / 0.6);
+      backdrop-filter: blur(2px);
+      transition: opacity 400ms;
+      pointer-events: none;
+    }
+    .viewer__loader.is-done { opacity: 0; }
+    .viewer__loader-text {
+      font-family: var(--font-display); font-size: 11px;
+      letter-spacing: 0.2em; color: var(--mint);
+      text-align: center;
+    }
+    .viewer__loader-bar {
+      width: 200px; height: 3px; background: var(--bg-3);
+      border-radius: 999px; margin-top: 10px; overflow: hidden;
+    }
+    .viewer__loader-bar > div {
+      height: 100%; background: var(--mint);
+      box-shadow: 0 0 12px var(--mint-glow);
+      transition: width 240ms;
+    }
+
+    /* Floor grid overlay (subtle scan look) */
+    .viewer__scan {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(90deg, oklch(0.85 0.15 175 / 0.06) 1px, transparent 1px),
+        linear-gradient(180deg, oklch(0.85 0.15 175 / 0.06) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+      opacity: 0.4;
+      mix-blend-mode: screen;
+    }
+    .viewer__crosshair {
+      position: absolute; left: 16px; top: 16px;
+      width: 14px; height: 14px;
+      border-left: 1px solid var(--mint);
+      border-top: 1px solid var(--mint);
+      opacity: 0.6;
+      pointer-events: none;
+    }
+    .viewer__crosshair--br { left: auto; top: auto; right: 16px; bottom: 90px; border: 0; border-right: 1px solid var(--mint); border-bottom: 1px solid var(--mint); }
+
+    /* Hint badge */
+    .viewer__hint {
+      position: absolute; bottom: 92px; left: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+      display: flex; gap: 10px;
+      font-family: var(--font-display); font-size: 10px;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--ink-3);
+      transition: opacity 700ms;
+    }
+    .viewer__hint kbd {
+      background: var(--bg-2); border: 1px solid var(--line);
+      border-bottom-width: 2px;
+      border-radius: 4px; padding: 2px 6px;
+      color: var(--ink-1); margin-right: 6px;
+      font-family: var(--font-display); font-size: 10px;
+    }
+    .viewer__hint.is-faded { opacity: 0; }
+
+    /* ===== Animation control rail ===== */
+    .viewer__rail {
+      position: relative; z-index: 2;
+      border-top: 1px solid var(--line-soft);
+      background: oklch(0.05 0.02 260 / 0.6);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+    }
+    .anim-cats {
+      display: flex; gap: 4px;
+      padding: 8px 10px 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .anim-cats::-webkit-scrollbar { display: none; }
+    .anim-cat {
+      padding: 6px 11px;
+      background: transparent; border: 0;
+      color: var(--ink-3); cursor: pointer;
+      font-family: var(--font-display); font-size: 10px; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      border-radius: 6px; white-space: nowrap;
+      transition: color 100ms, background 100ms;
+    }
+    .anim-cat:hover { color: var(--ink-1); }
+    .anim-cat.is-on {
+      color: var(--mint); background: oklch(0.85 0.15 175 / 0.1);
+    }
+    .anim-list {
+      display: flex; gap: 6px;
+      padding: 8px 10px 10px;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+    .anim-list::-webkit-scrollbar { height: 6px; }
+    .anim-chip {
+      padding: 7px 12px;
+      background: var(--bg-2);
+      border: 1px solid var(--line-soft);
+      color: var(--ink-1); cursor: pointer;
+      font-family: var(--font-display); font-size: 11px;
+      letter-spacing: 0.06em; font-weight: 600;
+      border-radius: 8px; white-space: nowrap;
+      transition: background 100ms, border-color 100ms, color 100ms;
+      display: inline-flex; align-items: center; gap: 7px;
+    }
+    .anim-chip:hover { border-color: var(--ink-4); }
+    .anim-chip.is-on {
+      background: var(--mint);
+      border-color: var(--mint);
+      color: var(--bg-0);
+      box-shadow: 0 0 18px -4px var(--mint-glow);
+    }
+    .anim-chip__glyph {
+      font-family: var(--font-display); font-size: 12px;
+      opacity: 0.8;
+    }
+    .anim-chip.is-on .anim-chip__glyph { opacity: 1; }
+
+    /* Control row (speed, autorotate, reset) */
+    .viewer__ctl {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px;
+      border-top: 1px solid var(--line-soft);
+      flex-wrap: wrap;
+    }
+    .ctl-grp {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 4px 10px;
+      background: var(--bg-2);
+      border: 1px solid var(--line-soft);
+      border-radius: 999px;
+    }
+    .ctl-grp__label {
+      font-family: var(--font-display); font-size: 9px;
+      letter-spacing: 0.2em; color: var(--ink-3);
+      text-transform: uppercase;
+    }
+    .ctl-grp__btn {
+      background: transparent; border: 0; cursor: pointer;
+      padding: 4px 8px;
+      font-family: var(--font-display); font-size: 11px;
+      font-weight: 700; color: var(--ink-2);
+      border-radius: 999px;
+    }
+    .ctl-grp__btn.is-on { background: var(--mint); color: var(--bg-0); }
+    .ctl-grp__slider {
+      width: 80px; appearance: none; -webkit-appearance: none;
+      background: var(--bg-3); height: 4px; border-radius: 999px;
+    }
+    .ctl-grp__slider::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--mint); cursor: pointer;
+      box-shadow: 0 0 0 3px oklch(0.85 0.15 175 / 0.2);
+    }
+    .ctl-grp__slider::-moz-range-thumb {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--mint); border: 0; cursor: pointer;
+    }
+    .ctl-grp__val {
+      font-family: var(--font-display); font-size: 10px;
+      color: var(--ink-1); min-width: 28px; text-align: right;
+    }
+    .ctl-grp__icon-btn {
+      width: 26px; height: 26px;
+      display: grid; place-items: center;
+      background: transparent; border: 0; cursor: pointer;
+      color: var(--ink-2); border-radius: 50%;
+      font-family: var(--font-display); font-weight: 700;
+    }
+    .ctl-grp__icon-btn:hover { color: var(--ink-0); background: var(--bg-3); }
+    .ctl-grp__icon-btn.is-on { color: var(--mint); }
+
+    /* ===== Stat strip under hero ===== */
+    .strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      padding: 28px 0;
+      border-top: 1px solid var(--line-soft);
+      border-bottom: 1px solid var(--line-soft);
+      margin-top: 28px;
+    }
+    @media (max-width: 760px) { .strip { grid-template-columns: repeat(2, 1fr); } }
+    .strip__cell { display: flex; flex-direction: column; gap: 4px; }
+    .strip__num {
+      font-family: var(--font-display); font-weight: 800;
+      font-size: 28px; color: var(--ink-0); letter-spacing: -0.01em;
+      line-height: 1;
+    }
+    .strip__num em { font-style: normal; color: var(--mint); }
+    .strip__lbl {
+      font-family: var(--font-display); font-size: 10px;
+      letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3);
+    }
+
+    /* ===== Section heading ===== */
+    .section { padding: 80px 0 40px; }
+    .sec-eye {
+      font-family: var(--font-display); font-size: 11px;
+      letter-spacing: 0.24em; text-transform: uppercase;
+      color: var(--mint); margin: 0 0 10px;
+    }
+    .sec-title {
+      font-family: var(--font-display); font-size: clamp(28px, 3.5vw, 42px);
+      font-weight: 800; color: var(--ink-0);
+      letter-spacing: -0.015em; margin: 0 0 12px;
+      text-wrap: balance; max-width: 720px;
+    }
+    .sec-lede {
+      color: var(--ink-2); font-size: 16px;
+      max-width: 640px; line-height: 1.55;
+    }
+
+    /* ===== Loop diagram ===== */
+    .loop {
+      margin-top: 28px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 900px) { .loop { grid-template-columns: repeat(2, 1fr); } }
+    .loop__node {
+      background: var(--bg-1);
+      border: 1px solid var(--line-soft);
+      border-radius: var(--r-md);
+      padding: 14px;
+      position: relative;
+    }
+    .loop__step {
+      font-family: var(--font-display); font-size: 10px;
+      color: var(--mint); letter-spacing: 0.16em;
+      margin-bottom: 6px;
+    }
+    .loop__title {
+      font-family: var(--font-display); font-weight: 700;
+      color: var(--ink-0); font-size: 14px;
+      letter-spacing: -0.01em; margin-bottom: 4px;
+    }
+    .loop__desc {
+      color: var(--ink-3); font-size: 12px; line-height: 1.45;
+    }
+    .loop__arrow {
+      position: absolute; right: -10px; top: 50%;
+      transform: translateY(-50%);
+      color: var(--ink-4);
+      font-family: var(--font-display); font-size: 14px; font-weight: 700;
+    }
+    @media (max-width: 900px) { .loop__arrow { display: none; } }
+
+    /* ===== Feature grid ===== */
+    .features {
+      margin-top: 32px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 900px) { .features { grid-template-columns: 1fr; } }
+    .feature {
+      background: var(--bg-1);
+      border: 1px solid var(--line-soft);
+      border-radius: var(--r-lg);
+      padding: 20px;
+      display: flex; flex-direction: column; gap: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+    .feature__icon {
+      width: 36px; height: 36px;
+      display: grid; place-items: center;
+      border-radius: 8px;
+      font-family: var(--font-display); font-weight: 800;
+      font-size: 15px;
+      background: oklch(0.85 0.15 175 / 0.1);
+      color: var(--mint);
+      border: 1px solid var(--mint-dim);
+      margin-bottom: 4px;
+    }
+    .feature__icon--m { background: oklch(0.7 0.22 0 / 0.1); color: var(--magenta); border-color: var(--magenta-dim); }
+    .feature__icon--a { background: oklch(0.82 0.15 75 / 0.1); color: var(--amber); border-color: var(--amber-dim); }
+    .feature__title {
+      font-family: var(--font-display); font-weight: 700;
+      color: var(--ink-0); font-size: 16px;
+      letter-spacing: -0.01em;
+    }
+    .feature__desc {
+      color: var(--ink-2); font-size: 13.5px; line-height: 1.55;
+    }
+    .feature__meta {
+      margin-top: 6px;
+      font-family: var(--font-display); font-size: 10px;
+      letter-spacing: 0.18em; color: var(--ink-3);
+    }
+
+    /* ===== Class roster ===== */
+    .classes {
+      margin-top: 28px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 1000px) { .classes { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 640px) { .classes { grid-template-columns: repeat(2, 1fr); } }
+    .class-card {
+      background: var(--bg-1);
+      border: 1px solid var(--line-soft);
+      border-radius: var(--r-lg);
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 8px;
+      position: relative;
+      cursor: pointer;
+      transition: transform 120ms, border-color 120ms;
+    }
+    .class-card:hover { transform: translateY(-2px); border-color: var(--line); }
+    .class-card.is-active {
+      border-color: var(--mint);
+      box-shadow: 0 0 0 1px var(--mint), 0 0 22px -8px var(--mint-glow);
+      background: oklch(0.85 0.15 175 / 0.06);
+    }
+    .class-card.is-active::after {
+      content: 'PICKED';
+      position: absolute;
+      top: 8px; right: 8px;
+      font-family: var(--font-display);
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      color: var(--mint);
+      background: oklch(0 0 0 / 0.5);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .class-card__tag {
+      position: absolute; top: 10px; right: 10px;
+      font-family: var(--font-display); font-size: 9px;
+      letter-spacing: 0.16em; padding: 2px 6px; border-radius: 999px;
+      background: var(--bg-3); color: var(--ink-2);
+    }
+    .class-card__portrait {
+      aspect-ratio: 1;
+      border-radius: 10px;
+      background: var(--bg-2);
+      border: 1px solid var(--line-soft);
+      padding: 14%;
+      display: grid; place-items: center;
+      position: relative; overflow: hidden;
+    }
+    .class-card__portrait::before {
+      content: "";
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(90deg, oklch(0.85 0.15 175 / 0.05) 1px, transparent 1px),
+        linear-gradient(180deg, oklch(0.85 0.15 175 / 0.05) 1px, transparent 1px);
+      background-size: 14px 14px;
+      opacity: 0.5;
+    }
+    .class-card__name {
+      font-family: var(--font-display); font-weight: 700;
+      color: var(--ink-0); font-size: 14px;
+    }
+    .class-card__role {
+      font-family: var(--font-display); font-size: 10px;
+      letter-spacing: 0.16em; color: var(--mint);
+      text-transform: uppercase;
+    }
+    .class-card__stats {
+      display: flex; gap: 4px; flex-wrap: wrap;
+      font-family: var(--font-display); font-size: 9px;
+      color: var(--ink-3); margin-top: 2px;
+    }
+    .stat-pill {
+      background: var(--bg-3); padding: 2px 6px; border-radius: 999px;
+      letter-spacing: 0.1em;
+    }
+    .stat-pill--mint { background: oklch(0.85 0.15 175 / 0.14); color: var(--mint); }
+    .stat-pill--magenta { background: oklch(0.7 0.22 0 / 0.14); color: var(--magenta); }
+    .stat-pill--amber { background: oklch(0.82 0.15 75 / 0.14); color: var(--amber); }
+
+    /* CSS-pixel bear (compact) */
+    .bear-mini {
+      display: grid;
+      gap: 0;
+      width: 100%;
+      aspect-ratio: 1;
+      image-rendering: pixelated;
+    }
+    .bear-mini__cell { width: 100%; height: 100%; }
+
+    /* ===== Final CTA ===== */
+    .cta {
+      margin-top: 32px;
+      padding: 36px;
+      background: linear-gradient(135deg, var(--bg-2), var(--bg-1) 70%);
+      border: 1px solid var(--line);
+      border-radius: var(--r-xl);
+      display: grid;
+      grid-template-columns: 1.4fr auto;
+      gap: 24px;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+    @media (max-width: 760px) { .cta { grid-template-columns: 1fr; padding: 24px; } }
+    .cta__title {
+      font-family: var(--font-display); font-weight: 800;
+      font-size: clamp(22px, 3vw, 30px);
+      color: var(--ink-0); letter-spacing: -0.01em;
+      margin: 0 0 4px;
+    }
+    .cta__sub { color: var(--ink-2); font-size: 14px; max-width: 480px; }
+    .cta__actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .cta::before {
+      content: "";
+      position: absolute; right: -100px; top: -100px;
+      width: 320px; height: 320px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--mint-glow), transparent 70%);
+      pointer-events: none;
+    }
+
+    /* ===== Footer ===== */
+    .footer {
+      padding: 32px 0 40px;
+      border-top: 1px solid var(--line-soft);
+      margin-top: 60px;
+      color: var(--ink-3);
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .footer a { color: var(--ink-2); text-decoration: none; }
+    .footer a:hover { color: var(--ink-0); }
+
+    /* ===== Login modal overlay ===== */
+    .modal-wrap {
+      position: fixed; inset: 0;
+      display: grid; place-items: center;
+      background: oklch(0 0 0 / 0.7);
+      backdrop-filter: blur(10px);
+      z-index: 100;
+      padding: 20px;
+      animation: fadeIn 200ms;
+    }
+    .modal-card {
+      background: var(--bg-1);
+      border: 1px solid var(--line);
+      border-radius: var(--r-xl);
+      padding: 28px;
+      max-width: 460px;
+      width: 100%;
+      animation: pop 220ms cubic-bezier(.2,.8,.3,1.2);
+      position: relative;
+    }
+    .modal-close {
+      position: absolute; top: 14px; right: 14px;
+      width: 30px; height: 30px;
+      background: var(--bg-3); border: 1px solid var(--line);
+      color: var(--ink-1); border-radius: 8px;
+      cursor: pointer; font-family: var(--font-display); font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+
+<div id="landing">
+  <!-- ==================== NAV ==================== -->
+  <header class="nav">
+    <div class="nav__inner">
+      <div class="brand">
+        <div class="brand__mark">B</div>
+        <div class="brand__text">BRAINWORK<small>ROYALE</small></div>
+      </div>
+      <nav class="nav__links">
+        <a class="nav__link" href="#game">The Game</a>
+        <a class="nav__link" href="#loop">How It Works</a>
+        <a class="nav__link" href="#classes">Classes</a>
+        <a class="nav__link" href="#lab">Character Lab</a>
+        <a class="nav__link" href="app.html">Demo →</a>
+      </nav>
+      <div class="nav__cta">
+        <button class="btn btn--ghost" data-modal="signin">Sign in</button>
+        <button class="btn btn--primary" data-modal="signup">Get started</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ==================== HERO ==================== -->
+    <section class="hero">
+      <div class="hero__copy">
+        <div class="hero__pre">
+          <span class="chip__dot"></span> Closed beta · S03 begins May 24
+        </div>
+        <h1 class="hero__title">Train the brain.<br/><em>Win the maze.</em></h1>
+        <p class="hero__sub">
+          A browser-based AI battle royale where the habits you build in real life — what you study, how much you move, how focused you stay — train an evolving neural network that fights for you. You don't control the character. You raise it.
+        </p>
+
+        <!-- Inline login -->
+        <div class="login-card" id="loginCard">
+          <div class="login-card__head">
+            <div class="login-card__title">ENTER THE WARDEN'S DECK</div>
+            <div class="login-card__switch" role="tablist">
+              <button class="is-on" data-tab="signin">SIGN IN</button>
+              <button data-tab="signup">CREATE</button>
+            </div>
+          </div>
+
+          <div class="login-card__providers">
+            <button class="prov-btn">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.35 11.1H12v3.8h5.35c-.23 1.2-.93 2.22-1.97 2.9v2.41h3.18c1.86-1.72 2.94-4.25 2.94-7.27 0-.6-.05-1.18-.15-1.84z" fill="#4285F4"/><path d="M12 22c2.7 0 4.96-.9 6.62-2.43l-3.18-2.41c-.88.59-2 .94-3.44.94-2.64 0-4.88-1.78-5.68-4.18H3.04v2.62A9.99 9.99 0 0 0 12 22z" fill="#34A853"/><path d="M6.32 13.92A6 6 0 0 1 6 12c0-.67.11-1.32.32-1.92V7.46H3.04A9.99 9.99 0 0 0 2 12c0 1.61.39 3.14 1.04 4.54l3.28-2.62z" fill="#FBBC05"/><path d="M12 6.27c1.47 0 2.79.51 3.83 1.5l2.85-2.85C16.95 3.34 14.7 2.4 12 2.4 8.13 2.4 4.83 4.6 3.04 7.46l3.28 2.62C7.12 7.68 9.36 6.27 12 6.27z" fill="#EA4335"/></svg>
+              Google
+            </button>
+            <button class="prov-btn">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.365 1.43c0 1.14-.42 2.2-1.12 3-1 1.12-2.62 1.96-4 1.85-.16-1.12.41-2.27 1.07-3.04C13.13 2.04 14.8 1.45 16.36 1.4l.01.03zm-.06 4.85c-2.18-.13-4.02 1.24-5.07 1.24-1.05 0-2.66-1.21-4.4-1.18-2.27.04-4.36 1.32-5.52 3.34-2.38 4.13-.61 10.24 1.69 13.61 1.13 1.64 2.46 3.48 4.2 3.42 1.71-.06 2.34-1.1 4.36-1.1 2.03 0 2.6 1.09 4.36 1.06 1.8-.03 2.93-1.66 4.04-3.32 1.27-1.92 1.79-3.78 1.82-3.88-.04-.02-3.47-1.34-3.5-5.32-.03-3.32 2.71-4.92 2.83-5-.55-2.43-3.93-2.66-4.81-2.7z"/></svg>
+              Apple
+            </button>
+          </div>
+
+          <div class="login-card__or">OR EMAIL</div>
+
+          <form id="loginForm" onsubmit="return false">
+            <div class="field">
+              <label class="field__label">Warden ID / Email</label>
+              <input class="field__input" type="email" placeholder="warden@brainwork.gg" autocomplete="email" />
+            </div>
+            <div class="field">
+              <div class="field__row">
+                <label class="field__label">Password</label>
+                <button class="forgot" type="button">Forgot →</button>
+              </div>
+              <input class="field__input" type="password" placeholder="••••••••••" autocomplete="current-password" />
+            </div>
+            <div class="field__row" style="margin: 4px 0 12px">
+              <label class="checkbox"><input type="checkbox" checked /> Keep me logged in</label>
+              <span class="mono tiny" style="color: var(--ink-3)">2FA optional</span>
+            </div>
+            <button type="submit" class="btn btn--primary btn--block">Sign in &nbsp;→</button>
+            <div class="login-card__foot">New warden? <a data-modal="signup">Create an account →</a></div>
+            <div class="login-card__foot" style="margin-top:6px">
+              Just browsing? <a id="guestBtn" style="cursor:pointer">Try as guest →</a>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ====== 3D character viewer ====== -->
+      <div class="viewer" id="viewer">
+        <div class="viewer__top">
+          <div class="viewer__pill">
+            <span class="chip__dot" style="background: var(--mint); box-shadow: 0 0 12px var(--mint)"></span>
+            PEP-SMOL · WARDEN BUILD
+          </div>
+          <div class="viewer__pill" id="animBadge">IDLE 01</div>
+        </div>
+        <div class="viewer__crosshair"></div>
+        <div class="viewer__crosshair viewer__crosshair--br"></div>
+
+        <div class="viewer__stage" id="stage">
+          <div class="viewer__scan"></div>
+          <div class="viewer__hint" id="hint">
+            <span><kbd>DRAG</kbd>Rotate</span>
+            <span><kbd>SCROLL</kbd>Zoom</span>
+            <span><kbd>DBL</kbd>Reset</span>
+          </div>
+          <div class="viewer__loader" id="loader">
+            <div>
+              <div class="viewer__loader-text" id="loadText">DECRYPTING RIG · 0%</div>
+              <div class="viewer__loader-bar"><div id="loadBar" style="width: 0%"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="viewer__rail">
+          <div class="anim-cats" id="animCats"></div>
+          <div class="anim-list" id="animList"></div>
+          <div class="viewer__ctl">
+            <div class="ctl-grp" title="Animation playback speed">
+              <span class="ctl-grp__label">SPD</span>
+              <input id="speedSlider" type="range" min="0.1" max="2" step="0.05" value="1" class="ctl-grp__slider" />
+              <span class="ctl-grp__val" id="speedVal">1.00×</span>
+            </div>
+            <div class="ctl-grp" title="Camera auto-rotate">
+              <span class="ctl-grp__label">CAM</span>
+              <button class="ctl-grp__btn" id="orbitBtn">ORBIT</button>
+              <button class="ctl-grp__icon-btn" id="resetBtn" title="Reset view">↺</button>
+            </div>
+            <div class="ctl-grp" title="Render quality">
+              <span class="ctl-grp__label">FX</span>
+              <button class="ctl-grp__btn is-on" id="shadowBtn">SHADOW</button>
+              <button class="ctl-grp__btn is-on" id="bloomBtn">GLOW</button>
+            </div>
+            <div style="flex:1"></div>
+            <div class="ctl-grp">
+              <span class="ctl-grp__label">FPS</span>
+              <span class="ctl-grp__val" id="fpsVal">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== STAT STRIP ==================== -->
+    <section class="strip">
+      <div class="strip__cell">
+        <div class="strip__num"><em>59</em></div>
+        <div class="strip__lbl">Rigged Animations</div>
+      </div>
+      <div class="strip__cell">
+        <div class="strip__num">2-5<em>min</em></div>
+        <div class="strip__lbl">Async Match Length</div>
+      </div>
+      <div class="strip__cell">
+        <div class="strip__num"><em>16</em></div>
+        <div class="strip__lbl">AIs per Maze</div>
+      </div>
+      <div class="strip__cell">
+        <div class="strip__num">100%<em>browser</em></div>
+        <div class="strip__lbl">No install. No GPU.</div>
+      </div>
+    </section>
+
+    <!-- ==================== GAME ==================== -->
+    <section class="section" id="game">
+      <div class="sec-eye">// What is Brainwork Royale</div>
+      <h2 class="sec-title">Your real-world habits train an AI that fights for you.</h2>
+      <p class="sec-lede">
+        Every warden owns a character with its own evolving neural net brain. You earn training generations by completing real quests — quizzes, focus sessions, fitness — and the brain compounds. Then you watch your AI replay matches against other wardens' AIs in procedural mazes.
+      </p>
+
+      <div class="features">
+        <div class="feature">
+          <div class="feature__icon">Σ</div>
+          <div class="feature__title">Quizzes that level your INT</div>
+          <div class="feature__desc">Pick the subjects you actually want to learn. Adaptive difficulty. Right answers feed your AI's perception range.</div>
+          <div class="feature__meta">MATH · HISTORY · CODE · LANGUAGES · 14 MORE</div>
+        </div>
+        <div class="feature">
+          <div class="feature__icon feature__icon--m">↑</div>
+          <div class="feature__title">Steps & sleep buff stamina</div>
+          <div class="feature__desc">Connect Strava, Apple Health or Google Fit. Real movement → real stamina at battle start. We don't pretend.</div>
+          <div class="feature__meta">STRAVA · FIT · HEALTH · DUOLINGO</div>
+        </div>
+        <div class="feature">
+          <div class="feature__icon feature__icon--a">❖</div>
+          <div class="feature__title">A brain you can read</div>
+          <div class="feature__desc">Watch every match as a deterministic replay. Scrub through your AI's decisions tick-by-tick across generations.</div>
+          <div class="feature__meta">REPLAY · TIMELINE · DIFF</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== LOOP ==================== -->
+    <section class="section" id="loop">
+      <div class="sec-eye">// The Core Loop</div>
+      <h2 class="sec-title">Live the habit. The maze does the rest.</h2>
+
+      <div class="loop">
+        <div class="loop__node">
+          <div class="loop__step">01 · QUEST</div>
+          <div class="loop__title">Pick a daily</div>
+          <div class="loop__desc">Quiz, focus block, run, or in-game challenge.</div>
+          <div class="loop__arrow">→</div>
+        </div>
+        <div class="loop__node">
+          <div class="loop__step">02 · STATS</div>
+          <div class="loop__title">Earn gens & stats</div>
+          <div class="loop__desc">Stats buff the body. Gens train the brain.</div>
+          <div class="loop__arrow">→</div>
+        </div>
+        <div class="loop__node">
+          <div class="loop__step">03 · TRAIN</div>
+          <div class="loop__title">Background NEAT</div>
+          <div class="loop__desc">Neuroevolution ticks while you go about your day.</div>
+          <div class="loop__arrow">→</div>
+        </div>
+        <div class="loop__node">
+          <div class="loop__step">04 · QUEUE</div>
+          <div class="loop__title">Drop into a maze</div>
+          <div class="loop__desc">16 AIs · procedural · auto-battle · ~3 min.</div>
+          <div class="loop__arrow">→</div>
+        </div>
+        <div class="loop__node">
+          <div class="loop__step">05 · REPLAY</div>
+          <div class="loop__title">Study the fight</div>
+          <div class="loop__desc">Scrub the brain. See where it failed.</div>
+          <div class="loop__arrow">→</div>
+        </div>
+        <div class="loop__node">
+          <div class="loop__step">06 · LOOP</div>
+          <div class="loop__title">Compound it</div>
+          <div class="loop__desc">Smarter brain. Better gear. Bigger maze.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== CLASSES ==================== -->
+    <section class="section" id="classes">
+      <div class="sec-eye">// Pick a Warden</div>
+      <h2 class="sec-title">Five classes. One PEP body. Different brains.</h2>
+      <p class="sec-lede">
+        Every class shares the same rigged character above — same 59 animations, same physics, same maze. The difference is in stat profile, ability set, and which real-world quests level them fastest.
+      </p>
+
+      <div class="classes" id="classGrid"><!-- injected --></div>
+    </section>
+
+    <!-- ==================== CHARACTER LAB ==================== -->
+    <section class="section" id="lab">
+      <div class="sec-eye">// Character Lab</div>
+      <h2 class="sec-title">Try the rig. All 59 motions. Real physics blending.</h2>
+      <p class="sec-lede">
+        The viewer above is the same engine the game uses. Crossfade duration, animation speed, and orbital camera are spring-damped so motion never snaps. Drag to rotate 360°, scroll or pinch to zoom, double-click to reset. Categories group locomotion, combat, and social.
+      </p>
+      <div class="features" style="margin-top: 20px">
+        <div class="feature">
+          <div class="feature__icon">▶</div>
+          <div class="feature__title">Spring-damped transitions</div>
+          <div class="feature__desc">AnimationMixer crossfade with eased blend curves. No snapping when you swap from Sprint → Parry mid-motion.</div>
+          <div class="feature__meta">0.32s DEFAULT · SCRIPTABLE</div>
+        </div>
+        <div class="feature">
+          <div class="feature__icon feature__icon--m">◎</div>
+          <div class="feature__title">Damped orbital camera</div>
+          <div class="feature__desc">Inertia on rotate + zoom. Touch, mouse and trackpad pinch all wired. Constrained pitch so the floor never inverts.</div>
+          <div class="feature__meta">DAMPING 0.06 · MIN/MAX ZOOM</div>
+        </div>
+        <div class="feature">
+          <div class="feature__icon feature__icon--a">⟂</div>
+          <div class="feature__title">Browser-only, GPU-light</div>
+          <div class="feature__desc">Pure Three.js. No physics engine yet — Rapier is queued for V1 so dodges, jumps and hits collide in-world.</div>
+          <div class="feature__meta">~3K TRIS · &lt; 100 DRAW CALLS</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== CTA ==================== -->
+    <section class="section" style="padding-top: 24px">
+      <div class="cta">
+        <div>
+          <h2 class="cta__title">The beta opens in 8 days.</h2>
+          <p class="cta__sub">No credit card. Free for the first 5,000 wardens. Brings your AI, your quests, your replays — across desktop, tablet and mobile.</p>
+        </div>
+        <div class="cta__actions">
+          <button class="btn btn--primary" data-modal="signup">Reserve a slot</button>
+          <a class="btn btn--ghost" href="app.html">Try the demo</a>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div>© 2026 Brainwork Royale · Solo dev, built in the open.</div>
+      <div style="display: flex; gap: 14px">
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <a href="#">Discord</a>
+        <a href="#">Changelog</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<!-- ==================== MODAL ROOT ==================== -->
+<div id="modalRoot"></div>
+
+<!-- ==================== FIREBASE SDK ==================== -->
+<script type="module" src="src/firebase.js"></script>
+
+<!-- ==================== IMPORTMAP + THREE ==================== -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ============================================================
+   CHARACTER VIEWER — Three.js + physics-smooth playback
+   ============================================================ */
+
+const ANIM_GROUPS = [
+  { id: 'idle', name: 'Idle', match: /^(idle|sit idle|crouch idle|crawling idle|swim idle|idle combat|recovery)/i, glyph: '◯' },
+  { id: 'locom', name: 'Locomotion', match: /^(walk|run|sprint|crouch walk|crawling foward|crawling backward|crawling rotation|crawling rotating|swim crawl|climb|chase|flee|combat run)/i, glyph: '→' },
+  { id: 'air', name: 'Air', match: /^(jump|fall|land)/i, glyph: '↑' },
+  { id: 'combat', name: 'Combat', match: /^(attack|combo attack|heavy attack|thrust|parry|get hit|warrior stunned|dodge|push|pull)/i, glyph: '⚔' },
+  { id: 'death', name: 'Down', match: /^(death|death pose)/i, glyph: '✕' },
+  { id: 'social', name: 'Social', match: /^(sit|eat|salute|hi|talk|taunt|mad|happy|shelve|interact|detection|crouch idle)/i, glyph: '☻' },
+];
+function classifyAnim(name) {
+  for (const g of ANIM_GROUPS) if (g.match.test(name)) return g.id;
+  return 'social';
+}
+
+const stage = document.getElementById('stage');
+const loader = document.getElementById('loader');
+const loadText = document.getElementById('loadText');
+const loadBar = document.getElementById('loadBar');
+const animList = document.getElementById('animList');
+const animCats = document.getElementById('animCats');
+const animBadge = document.getElementById('animBadge');
+const speedSlider = document.getElementById('speedSlider');
+const speedVal = document.getElementById('speedVal');
+const orbitBtn = document.getElementById('orbitBtn');
+const resetBtn = document.getElementById('resetBtn');
+const shadowBtn = document.getElementById('shadowBtn');
+const bloomBtn = document.getElementById('bloomBtn');
+const fpsVal = document.getElementById('fpsVal');
+const hint = document.getElementById('hint');
+
+// ---- Renderer / scene ----
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = null;
+scene.fog = new THREE.Fog(0x070914, 8, 22);
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+camera.position.set(0, 2.6, 7);
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  if (r.width < 4 || r.height < 4) return;
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / r.height;
+  camera.updateProjectionMatrix();
+}
+resize();
+new ResizeObserver(resize).observe(stage);
+
+// ---- Lights ----
+scene.add(new THREE.AmbientLight(0x4a528a, 0.55));
+
+const key = new THREE.DirectionalLight(0xfff2dc, 1.65);
+key.position.set(4, 8, 4);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -5;
+key.shadow.camera.right = 5;
+key.shadow.camera.top = 5;
+key.shadow.camera.bottom = -5;
+key.shadow.bias = -0.0005;
+key.shadow.normalBias = 0.02;
+key.shadow.radius = 4;
+scene.add(key);
+
+const rim = new THREE.DirectionalLight(0x9bf0e0, 1.1);
+rim.position.set(-3, 5, -5);
+scene.add(rim);
+
+const accentMint = new THREE.PointLight(0x5df2d6, 1.4, 12);
+accentMint.position.set(2, 1.6, 2.5);
+scene.add(accentMint);
+
+const accentMag = new THREE.PointLight(0xff4d9d, 1.0, 12);
+accentMag.position.set(-2.5, 2.2, -2);
+scene.add(accentMag);
+
+// ---- Ground ----
+const groundGroup = new THREE.Group();
+scene.add(groundGroup);
+
+const groundGeo = new THREE.CircleGeometry(8, 64);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0d1a, roughness: 0.92, metalness: 0.1
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+groundGroup.add(ground);
+
+// emissive ring
+const ringGeo = new THREE.RingGeometry(2.4, 2.55, 64);
+const ringMat = new THREE.MeshBasicMaterial({
+  color: 0x5df2d6, transparent: true, opacity: 0.55, side: THREE.DoubleSide,
+});
+const ring = new THREE.Mesh(ringGeo, ringMat);
+ring.rotation.x = -Math.PI / 2;
+ring.position.y = 0.005;
+groundGroup.add(ring);
+
+// thinner inner ring
+const ringGeo2 = new THREE.RingGeometry(1.0, 1.05, 48);
+const ringMat2 = new THREE.MeshBasicMaterial({
+  color: 0xff4d9d, transparent: true, opacity: 0.45, side: THREE.DoubleSide,
+});
+const ring2 = new THREE.Mesh(ringGeo2, ringMat2);
+ring2.rotation.x = -Math.PI / 2;
+ring2.position.y = 0.005;
+groundGroup.add(ring2);
+
+// tick marks around outer ring
+for (let i = 0; i < 24; i++) {
+  const tickMat = new THREE.MeshBasicMaterial({ color: 0x2a3052 });
+  const t = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.005, 0.18), tickMat);
+  const a = (i / 24) * Math.PI * 2;
+  t.position.set(Math.cos(a) * 3.0, 0.005, Math.sin(a) * 3.0);
+  t.rotation.y = -a;
+  groundGroup.add(t);
+}
+
+// ---- Controls (orbit + zoom with physics damping) ----
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;       // <-- physics feel
+controls.rotateSpeed = 0.85;
+controls.zoomSpeed = 0.9;
+controls.minDistance = 3.2;
+controls.maxDistance = 12;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minPolarAngle = Math.PI * 0.12;
+controls.enablePan = false;
+controls.autoRotateSpeed = 1.0;
+
+let userInteracted = false;
+controls.addEventListener('start', () => {
+  userInteracted = true;
+  hint.classList.add('is-faded');
+  // disable autorotate when user grabs
+  controls.autoRotate = false;
+  orbitBtn.classList.remove('is-on');
+});
+
+stage.addEventListener('dblclick', () => {
+  // reset view
+  resetView();
+});
+resetBtn.addEventListener('click', resetView);
+function resetView() {
+  controls.target.set(0, 1.1, 0);
+  // animate camera back to default via small tween
+  const start = camera.position.clone();
+  const end = new THREE.Vector3(0, 2.6, 7);
+  const t0 = performance.now();
+  const dur = 600;
+  function step() {
+    const k = Math.min(1, (performance.now() - t0) / dur);
+    const e = 1 - Math.pow(1 - k, 3);
+    camera.position.lerpVectors(start, end, e);
+    if (k < 1) requestAnimationFrame(step);
+  }
+  step();
+}
+
+// autorotate toggle (start ON for hero)
+controls.autoRotate = true;
+orbitBtn.classList.add('is-on');
+orbitBtn.addEventListener('click', () => {
+  controls.autoRotate = !controls.autoRotate;
+  orbitBtn.classList.toggle('is-on', controls.autoRotate);
+});
+
+shadowBtn.addEventListener('click', () => {
+  renderer.shadowMap.enabled = !renderer.shadowMap.enabled;
+  shadowBtn.classList.toggle('is-on', renderer.shadowMap.enabled);
+  // force material refresh
+  scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
+});
+bloomBtn.addEventListener('click', () => {
+  const on = !bloomBtn.classList.contains('is-on');
+  bloomBtn.classList.toggle('is-on', on);
+  renderer.toneMappingExposure = on ? 1.15 : 0.85;
+  accentMint.intensity = on ? 1.4 : 0.5;
+  accentMag.intensity = on ? 1.0 : 0.4;
+  ring.material.opacity = on ? 0.55 : 0.25;
+  ring2.material.opacity = on ? 0.45 : 0.2;
+});
+
+// ---- Load PEP-SMOL ----
+let mixer = null;
+let actions = {};      // name -> AnimationAction
+let currentAction = null;
+let currentClipName = null;
+let charRoot = null;
+
+const gltfLoader = new GLTFLoader();
+gltfLoader.load('assets/pep-smol.gltf',
+  (gltf) => {
+    charRoot = gltf.scene;
+    // Scale & center
+    const box = new THREE.Box3().setFromObject(charRoot);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const center = new THREE.Vector3(); box.getCenter(center);
+    // Target height ~2.2 units
+    const targetH = 2.2;
+    const s = targetH / Math.max(size.y, 0.1);
+    charRoot.scale.setScalar(s);
+    // Re-bound and rest on floor
+    const box2 = new THREE.Box3().setFromObject(charRoot);
+    charRoot.position.y -= box2.min.y;
+    // The model has -1 scale on root which can flip normals: re-center X/Z
+    const box3 = new THREE.Box3().setFromObject(charRoot);
+    const c = new THREE.Vector3(); box3.getCenter(c);
+    charRoot.position.x -= c.x;
+    charRoot.position.z -= c.z;
+
+    charRoot.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        // tighten materials a touch
+        if (o.material && o.material.isMeshStandardMaterial) {
+          o.material.roughness = Math.min(1, (o.material.roughness ?? 0.7) * 0.9);
+          o.material.envMapIntensity = 0.8;
+        }
+      }
+    });
+
+    scene.add(charRoot);
+
+    // ---- Animations ----
+    mixer = new THREE.AnimationMixer(charRoot);
+    gltf.animations.forEach((clip) => {
+      const a = mixer.clipAction(clip);
+      a.clampWhenFinished = false;
+      a.enabled = true;
+      actions[clip.name] = a;
+    });
+
+    buildAnimUI(gltf.animations.map(c => c.name));
+    setLoaderDone();
+
+    // default action
+    const startName = gltf.animations.find(c => /^idle 01/i.test(c.name))?.name || gltf.animations[0].name;
+    playAnim(startName, 0);
+  },
+  (xhr) => {
+    if (xhr.total) {
+      const pct = Math.round((xhr.loaded / xhr.total) * 100);
+      loadText.textContent = `DECRYPTING RIG · ${pct}%`;
+      loadBar.style.width = pct + '%';
+    } else {
+      loadText.textContent = `LOADING · ${Math.round(xhr.loaded / 1024)} KB`;
+      loadBar.style.width = ((xhr.loaded / 1.5e7 * 100) | 0) + '%';
+    }
+  },
+  (err) => {
+    loadText.textContent = 'FAILED TO LOAD RIG';
+    loadText.style.color = 'var(--magenta)';
+    console.error(err);
+  }
+);
+
+function setLoaderDone() {
+  loader.classList.add('is-done');
+  setTimeout(() => loader.style.display = 'none', 600);
+  // fade hint after 4s
+  setTimeout(() => hint.classList.add('is-faded'), 4000);
+}
+
+let currentCat = 'idle';
+
+function buildAnimUI(names) {
+  // Build categories
+  ANIM_GROUPS.forEach(g => {
+    const has = names.some(n => classifyAnim(n) === g.id);
+    if (!has) return;
+    const btn = document.createElement('button');
+    btn.className = 'anim-cat' + (g.id === currentCat ? ' is-on' : '');
+    btn.dataset.cat = g.id;
+    btn.textContent = g.name;
+    btn.addEventListener('click', () => {
+      currentCat = g.id;
+      [...animCats.children].forEach(c => c.classList.toggle('is-on', c.dataset.cat === g.id));
+      renderAnimList(names);
+    });
+    animCats.appendChild(btn);
+  });
+  renderAnimList(names);
+}
+
+function renderAnimList(names) {
+  animList.innerHTML = '';
+  const filt = names.filter(n => classifyAnim(n) === currentCat);
+  // sort: idle first within group
+  filt.sort((a, b) => a.localeCompare(b));
+  filt.forEach(name => {
+    const g = ANIM_GROUPS.find(x => x.id === currentCat);
+    const chip = document.createElement('button');
+    chip.className = 'anim-chip' + (name === currentClipName ? ' is-on' : '');
+    chip.innerHTML = `<span class="anim-chip__glyph">${g?.glyph || '·'}</span>${prettifyName(name)}`;
+    chip.addEventListener('click', () => playAnim(name));
+    animList.appendChild(chip);
+  });
+}
+function prettifyName(n) {
+  // strip trailing " 01" etc; uppercase
+  return n.replace(/\s+0?(\d+)$/, '').toUpperCase();
+}
+
+// ---- Physics-smooth crossfade ----
+function playAnim(name, fadeMs = 320) {
+  const next = actions[name];
+  if (!next || name === currentClipName) return;
+  const prev = currentAction;
+  next.reset();
+  next.setEffectiveTimeScale(parseFloat(speedSlider.value));
+  next.setEffectiveWeight(1);
+  next.play();
+  if (prev) {
+    prev.crossFadeTo(next, fadeMs / 1000, true);
+  }
+  currentAction = next;
+  currentClipName = name;
+  animBadge.textContent = prettifyName(name);
+
+  // Refresh selected chip
+  [...animList.children].forEach(c => {
+    c.classList.toggle('is-on', c.textContent.trim() === prettifyName(name).trim() || c.querySelector('.anim-chip__glyph')?.nextSibling?.textContent === prettifyName(name));
+  });
+  // Easier: re-render list
+  renderAnimList(Object.keys(actions));
+}
+
+// Speed slider
+speedSlider.addEventListener('input', () => {
+  const v = parseFloat(speedSlider.value);
+  speedVal.textContent = v.toFixed(2) + '×';
+  Object.values(actions).forEach(a => a.setEffectiveTimeScale(v));
+});
+
+// ---- Animation loop ----
+const clock = new THREE.Clock();
+let frames = 0; let fpsT = performance.now();
+
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(0.05, clock.getDelta());
+
+  if (mixer) mixer.update(dt);
+  controls.update();
+
+  // gentle drifting accent lights
+  const t = performance.now() * 0.001;
+  accentMint.position.x = Math.sin(t * 0.6) * 2.5;
+  accentMint.position.z = Math.cos(t * 0.5) * 2.5;
+  accentMag.position.x = -Math.sin(t * 0.4 + 1) * 2.5;
+  accentMag.position.z = -Math.cos(t * 0.55 + 1) * 2.5;
+  ring.rotation.z = t * 0.2;
+  ring2.rotation.z = -t * 0.35;
+
+  renderer.render(scene, camera);
+
+  frames++;
+  const now = performance.now();
+  if (now - fpsT > 500) {
+    fpsVal.textContent = Math.round((frames * 1000) / (now - fpsT));
+    frames = 0; fpsT = now;
+  }
+}
+tick();
+
+/* ============================================================
+   LOGIN MODAL + INLINE LOGIN
+   ============================================================ */
+const modalRoot = document.getElementById('modalRoot');
+
+function openModal(mode) {
+  modalRoot.innerHTML = `
+    <div class="modal-wrap" id="modalWrap">
+      <div class="modal-card">
+        <button class="modal-close" id="modalClose">×</button>
+        <div class="login-card__head" style="margin-bottom:18px">
+          <div class="login-card__title">${mode === 'signup' ? 'CLAIM YOUR WARDEN ID' : 'WELCOME BACK, WARDEN'}</div>
+        </div>
+        ${mode === 'signup' ? `
+          <div class="field">
+            <label class="field__label">Warden handle</label>
+            <input class="field__input" type="text" placeholder="warden_07" />
+          </div>` : ''}
+        <div class="field">
+          <label class="field__label">Email</label>
+          <input class="field__input" type="email" placeholder="warden@brainwork.gg" />
+        </div>
+        <div class="field">
+          <label class="field__label">Password</label>
+          <input class="field__input" type="password" placeholder="••••••••" />
+        </div>
+        ${mode === 'signup' ? `
+          <label class="checkbox" style="margin: 8px 0 12px">
+            <input type="checkbox" /> I'll do quests honestly. No bots.
+          </label>` : `
+          <div class="field__row" style="margin: 4px 0 12px">
+            <label class="checkbox"><input type="checkbox" checked /> Remember me</label>
+            <button class="forgot" type="button">Forgot →</button>
+          </div>`}
+        <button class="btn btn--primary btn--block" id="modalCta">${mode === 'signup' ? 'Create account →' : 'Sign in →'}</button>
+        <div class="login-card__foot">
+          ${mode === 'signup'
+            ? 'Already have a Warden ID? <a id="switchToSignin">Sign in →</a>'
+            : 'No account yet? <a id="switchToSignup">Create one →</a>'}
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('modalClose').onclick = closeModal;
+  document.getElementById('modalWrap').addEventListener('click', (e) => {
+    if (e.target.id === 'modalWrap') closeModal();
+  });
+  const sw = document.getElementById('switchToSignup'); if (sw) sw.onclick = () => openModal('signup');
+  const sw2 = document.getElementById('switchToSignin'); if (sw2) sw2.onclick = () => openModal('signin');
+  document.getElementById('modalCta').onclick = async () => {
+    const wrap = document.getElementById('modalWrap');
+    const email = wrap.querySelector('input[type=email]')?.value?.trim();
+    const password = wrap.querySelector('input[type=password]')?.value;
+    if (!email || !password) { showToast('⚠ Email and password required'); return; }
+    if (mode === 'signup') await doSignUp(email, password);
+    else await doSignIn(email, password);
+  };
+}
+function closeModal() { modalRoot.innerHTML = ''; }
+document.querySelectorAll('[data-modal]').forEach(el => {
+  el.addEventListener('click', () => openModal(el.dataset.modal));
+});
+
+// inline switch
+document.querySelectorAll('#loginCard .login-card__switch button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#loginCard .login-card__switch button').forEach(x => x.classList.remove('is-on'));
+    b.classList.add('is-on');
+    if (b.dataset.tab === 'signup') openModal('signup');
+  });
+});
+
+/* ============================================================
+   FIREBASE AUTH — wire the inline login form, modal CTA, providers
+   ============================================================ */
+function whenFirebaseReady(cb) {
+  if (window.firebase) { cb(); return; }
+  window.addEventListener('firebase-ready', cb, { once: true });
+}
+
+const friendlyAuthError = (code) => ({
+  'auth/invalid-credential': 'Wrong email or password',
+  'auth/invalid-email': 'Invalid email',
+  'auth/user-not-found': 'No account with that email',
+  'auth/wrong-password': 'Wrong password',
+  'auth/email-already-in-use': 'Email already registered · sign in instead',
+  'auth/weak-password': 'Password must be at least 6 characters',
+  'auth/popup-closed-by-user': 'Sign-in cancelled',
+  'auth/popup-blocked': 'Popup blocked — allow popups and retry',
+})[code] || 'Sign-in failed · ' + (code || 'unknown');
+
+async function bootstrapUserDoc(user) {
+  const { db, doc, getDoc, setDoc, serverTimestamp } = window.firebase;
+  const ref = doc(db, 'users', user.uid);
+  const snap = await getDoc(ref);
+  if (snap.exists()) return;
+  await setDoc(ref, {
+    role: 'player',
+    email: user.email || '',
+    displayName: user.displayName || (user.email || '').split('@')[0] || 'warden',
+    createdAt: serverTimestamp(),
+  });
+}
+
+async function doSignIn(email, password) {
+  try {
+    showToast('Authenticating…');
+    await window.firebase.signInEmail(email, password);
+    showToast('Welcome back · entering deck…');
+    setTimeout(() => { location.href = 'app.html'; }, 600);
+  } catch (e) { showToast('⚠ ' + friendlyAuthError(e.code)); }
+}
+
+async function doSignUp(email, password) {
+  try {
+    showToast('Creating account…');
+    const cred = await window.firebase.signUpEmail(email, password);
+    await bootstrapUserDoc(cred.user);
+    showToast('Warden ID claimed · entering deck…');
+    setTimeout(() => { location.href = 'app.html'; }, 600);
+  } catch (e) { showToast('⚠ ' + friendlyAuthError(e.code)); }
+}
+
+async function doGoogleSignIn() {
+  try {
+    showToast('Opening Google sign-in…');
+    const cred = await window.firebase.signInGoogle();
+    await bootstrapUserDoc(cred.user);
+    showToast('Welcome · entering deck…');
+    setTimeout(() => { location.href = 'app.html'; }, 600);
+  } catch (e) { showToast('⚠ ' + friendlyAuthError(e.code)); }
+}
+
+async function doGuestSignIn() {
+  try {
+    showToast('Spinning up a guest session…');
+    const cred = await window.firebase.signInAnon();
+    // Anonymous users have no email/displayName — synthesize a handle from their uid
+    const handle = 'Guest-' + cred.user.uid.slice(0, 6);
+    const { db, doc, getDoc, setDoc, serverTimestamp } = window.firebase;
+    const ref = doc(db, 'users', cred.user.uid);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        role: 'player',
+        email: '',
+        displayName: handle,
+        isAnonymous: true,
+        createdAt: serverTimestamp(),
+      });
+    }
+    showToast('Welcome ' + handle + ' · entering deck…');
+    setTimeout(() => { location.href = 'app.html'; }, 600);
+  } catch (e) { showToast('⚠ ' + friendlyAuthError(e.code)); }
+}
+
+document.getElementById('loginForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  whenFirebaseReady(async () => {
+    const card = document.getElementById('loginCard');
+    const email = card.querySelector('input[type=email]').value.trim();
+    const password = card.querySelector('input[type=password]').value;
+    if (!email || !password) { showToast('⚠ Email and password required'); return; }
+    await doSignIn(email, password);
+  });
+});
+
+// Wire provider buttons. First = Google (active), second = Apple (disabled until paid dev account).
+whenFirebaseReady(() => {
+  const provs = document.querySelectorAll('#loginCard .prov-btn');
+  if (provs[0]) provs[0].addEventListener('click', doGoogleSignIn);
+  if (provs[1]) {
+    provs[1].title = 'Apple sign-in requires a paid Apple Developer account — not enabled yet';
+    provs[1].style.opacity = '0.45';
+    provs[1].addEventListener('click', () => showToast('Apple sign-in not enabled yet'));
+  }
+  const guest = document.getElementById('guestBtn');
+  if (guest) guest.addEventListener('click', doGuestSignIn);
+});
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<span class="chip__dot" style="background: var(--mint); box-shadow: 0 0 12px var(--mint)"></span><span>${msg}</span>`;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.transition = 'opacity 300ms, transform 300ms'; t.style.opacity = '0'; t.style.transform = 'translateY(10px)'; }, 2400);
+  setTimeout(() => t.remove(), 2800);
+}
+
+/* ============================================================
+   CLASS ROSTER (pixel bears) — minimal inline build
+   ============================================================ */
+const CLASS_INFO = [
+  { id: 'engineer', name: 'Engineer', role: 'TECH', stats: ['+INT', '+SPD'], tag: 'STARTER',
+    pat: ['................','................','.....HHHHHH.....','....HHHHHHHH....','...HHYYYYYYHH...','...HHYYYYYYHH...','..FFFFFFFFFFFF..','..FFGGFFFFGGFF..','..FFGNFFFFGNFF..','..FFFFFFKKFFFF..','..FFFFFFFFFFFF..','...FFFFFFFFFF...','....FFFFFFFF....','.....FFFFFF.....','................','................'],
+    pal: { F: '#8B5A3C', H: '#FFC93C', Y: '#3A1F0A', G: '#9bf0e0', N: '#1a1d2e', K: '#1a1d2e' } },
+  { id: 'polar', name: 'Polar', role: 'TANK', stats: ['+STA', '+DEF'], tag: 'UNLOCK L4',
+    pat: ['................','................','....FF....FF....','...FFFF..FFFF...','..FFFFFFFFFFFF..','..FFFFFFFFFFFF..','..FFKKFFFFKKFF..','..FFKKFFFFKKFF..','..FFFFFFNNFFFF..','..FFFFFFFFFFFF..','...FFFFFFFFFF...','....SSSSSSSS....','....SSPPPPSS....','....SSSSSSSS....','................','................'],
+    pal: { F: '#e8eef7', K: '#1a1d2e', N: '#5a608a', S: '#5e2c2c', P: '#bca58a' } },
+  { id: 'angel', name: 'Dark Angel', role: 'GLASS', stats: ['+STR'], tag: 'UNLOCK L8',
+    pat: ['................','....H........H..','...HH........HH.','..HHF........FHH','..FFFFFFFFFFFFFF','..FFFFFFFFFFFFFF','..FFRRFFFFRRFF..','..FFRRFFFFRRFF..','..FFFFFFNNFFFF..','..FFFFFFFFFFFF..','...FFFFFFFFFF...','....FFFFFFFF....','................','..WW........WW..','.W.W........W.W.','................'],
+    pal: { F: '#1a1d2e', H: '#1a1d2e', R: '#ff4d6d', N: '#5a608a', W: '#383d63' } },
+  { id: 'rainbow', name: 'Rainbow', role: 'TRICKSTER', stats: ['+SPD'], tag: 'UNLOCK L6',
+    pat: ['................','................','....AA....AA....','...AAAA..AAAA...','..AAAAAAAAAAAA..','..BBBBBBBBBBBB..','..CCKKCCCCKKCC..','..CCKKCCCCKKCC..','..DDDDDDNNDDDD..','..EEEEEEEEEEEE..','...GGGGGGGGGG...','....IIIIIIII....','.....IIIIII.....','................','................','................'],
+    pal: { A: '#ff5577', B: '#ffb84d', C: '#fff066', D: '#7be38a', E: '#5dd3f2', G: '#a973ff', I: '#ff4d9d', K: '#1a1d2e', N: '#1a1d2e' } },
+  { id: 'helmet', name: 'Helmet', role: 'SUPPORT', stats: ['+REC', '+DEF'], tag: 'UNLOCK L10',
+    pat: ['................','................','....HHHHHHHH....','...HHHHHHHHHH...','..HHHHHHHHHHHH..','..FFHHHHHHHHFF..','..FFKKFFFFKKFF..','..FFKKFFFFKKFF..','..FFFFFFNNFFFF..','..FFFFFFFFFFFF..','...FFFFFFFFFF...','....FFFFFFFF....','.....cccccc.....','....cccccccc....','...cKKccccKKc...','...ccccnnccccc..'],
+    pal: { F: '#a07050', H: '#5a8fc7', K: '#1a1d2e', N: '#1a1d2e', c: '#caa07a', n: '#5a4030' } }
+];
+
+const classGrid = document.getElementById('classGrid');
+CLASS_INFO.forEach(c => {
+  const card = document.createElement('div');
+  card.className = 'class-card';
+  card.innerHTML = `
+    <div class="class-card__tag">${c.tag}</div>
+    <div class="class-card__portrait">${renderBearSVG(c.pat, c.pal)}</div>
+    <div class="class-card__name">${c.name}</div>
+    <div class="class-card__role">${c.role}</div>
+    <div class="class-card__stats">
+      ${c.stats.map(s => `<span class="stat-pill ${s.includes('SPD') ? 'stat-pill--amber' : s.includes('STR') ? 'stat-pill--magenta' : 'stat-pill--mint'}">${s}</span>`).join('')}
+    </div>
+  `;
+  card.addEventListener('click', () => {
+    // Stash the class pick so the game can apply it after sign-in
+    try { localStorage.setItem('pendingClass', c.id); } catch (e) {}
+    // Update the "active" highlight across all cards
+    [...classGrid.children].forEach((el) => el.classList.toggle('is-active', el === card));
+    showToast(`${c.name} locked in · sign in to deploy`);
+
+    // Play a class-matching anim in the viewer
+    const map = { engineer: 'Interact 01', polar: 'Idle Combat 01', angel: 'Heavy Attack 01', rainbow: 'Dodge 01', helmet: 'Salute 01' };
+    if (currentClipName && actions[map[c.id]]) {
+      const cat = classifyAnim(map[c.id]);
+      currentCat = cat;
+      [...animCats.children].forEach(b => b.classList.toggle('is-on', b.dataset.cat === cat));
+      renderAnimList(Object.keys(actions));
+      playAnim(map[c.id]);
+      document.getElementById('viewer').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+  // Reflect a previously-stashed pick on page load
+  try { if (localStorage.getItem('pendingClass') === c.id) card.classList.add('is-active'); } catch (e) {}
+  classGrid.appendChild(card);
+});
+
+function renderBearSVG(pat, pal) {
+  const W = 16;
+  const cell = 100 / W;
+  let cells = '';
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const ch = pat[y][x];
+      if (ch === '.') continue;
+      const fill = pal[ch] || '#888';
+      cells += `<rect x="${x*cell}" y="${y*cell}" width="${cell+0.4}" height="${cell+0.4}" fill="${fill}"/>`;
+    }
+  }
+  return `<svg viewBox="0 0 100 100" style="width:100%;height:100%;position:relative;z-index:1" shape-rendering="crispEdges">${cells}</svg>`;
+}
+
+</script>
+</body>
+</html>

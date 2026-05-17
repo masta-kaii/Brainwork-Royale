@@ -1,0 +1,40 @@
+rules_version = '2';
+
+// ============================================================
+// BRAINWORK ROYALE — STORAGE SECURITY RULES
+// Owner-only writes, public reads where appropriate.
+// ============================================================
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+
+    // ---------- /users/{uid}/avatar/{file} ----------
+    // Public-readable avatars. Owner uploads, image only, < 5 MB.
+    match /users/{userId}/avatar/{filename} {
+      allow read: if true;
+      allow write: if isOwner(userId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // ---------- /users/{uid}/quest-proof/{file} ----------
+    // Quest photo proof (e.g., running-watch screenshot).
+    // Owner-only read/write, < 10 MB.
+    match /users/{userId}/quest-proof/{filename} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // ---------- /public/{path=**} ----------
+    // Admin-curated public assets (cosmetics, models, audio).
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;  // upload via Firebase Console or Admin SDK
+    }
+
+    // Default deny — anything not matched above is locked.
+  }
+}
