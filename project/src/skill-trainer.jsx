@@ -69,6 +69,9 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
         previewWorld.step();
         const snap = env.snapshot(envState);
         sceneRef.current.applySnapshot(snap.bodies || snap);
+        if (snap.joints && sceneRef.current.applyJointAngles) {
+          sceneRef.current.applyJointAngles(snap.joints);
+        }
         if (snap.props && sceneRef.current.applyPropsSnapshot) {
           sceneRef.current.applyPropsSnapshot(snap.props);
         }
@@ -95,6 +98,11 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
           pb.idx = Math.min(target, pb.trace.length - 1);
           const frame = pb.trace[pb.idx];
           sceneRef.current?.applySnapshot(frame.bodies || frame);
+          // Drive the model's leg bones from physics joint angles so the
+          // bear's legs visibly articulate with the brain's torque outputs.
+          if (frame?.joints && sceneRef.current?.applyJointAngles) {
+            sceneRef.current.applyJointAngles(frame.joints);
+          }
           // Mirror physical props (pendulums, debris, etc.)
           if (frame?.props && sceneRef.current?.applyPropsSnapshot) {
             sceneRef.current.applyPropsSnapshot(frame.props);

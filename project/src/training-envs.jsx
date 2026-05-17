@@ -79,6 +79,14 @@ function _snapshotRagdoll(rag, extra = {}, props = null) {
     const t = b.translation(), r = b.rotation();
     bodies[name] = { x: t.x, y: t.y, z: t.z, qx: r.x, qy: r.y, qz: r.z, qw: r.w };
   }
+  // Joint angles per tick — used by the renderer's bone-driving so the
+  // PEP-Smol model's actual leg bones rotate with the physics joints.
+  const joints = {
+    lHip:  rag.joints.lHip.angle?.()  ?? 0,
+    rHip:  rag.joints.rHip.angle?.()  ?? 0,
+    lKnee: rag.joints.lKnee.angle?.() ?? 0,
+    rKnee: rag.joints.rKnee.angle?.() ?? 0,
+  };
   let propsSnap = null;
   if (props) {
     propsSnap = {};
@@ -88,7 +96,7 @@ function _snapshotRagdoll(rag, extra = {}, props = null) {
       propsSnap[name] = { x: t.x, y: t.y, z: t.z, qx: r.x, qy: r.y, qz: r.z, qw: r.w };
     }
   }
-  return { bodies, props: propsSnap, ...extra };
+  return { bodies, joints, props: propsSnap, ...extra };
 }
 
 // Seeded pseudo-random so episodes are reproducible per genome
