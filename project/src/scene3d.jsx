@@ -1472,115 +1472,159 @@ function mountRagdollScene(container) {
     currentAnim = name;
   }
 
-  // Cached references to the bear's leg bones — populated when we find
-  // them in the GLTF skeleton. Each one's bind-pose rotation is stored
-  // so bone-driving can apply a DELTA from rest instead of overwriting.
-  const legBones = {};   // { lThigh, rThigh, lShin, rShin } -> { bone, restQuat }
+  // ============================================================
+  // POPULATION VIEW — N bears side by side, each with its own
+  // PEP-Smol clone, mixer, leg bones, and X offset. Per-bear state
+  // lives in `bears[i]`; API methods take an optional bearIdx.
+  // ============================================================
+  const POPULATION = 4;
+  const BEAR_OFFSETS = [-1.8, -0.6, 0.6, 1.8];     // X positions on the platform
+  const bears = [];   // each: { model, mixer, actions, legBones, currentAnim, currentAction, pendingJoints, groundOffset, cx, cz, offsetX }
 
-  // Build the PEP-Smol model from the pre-loaded GLTF. Fall back to a
-  // single torso capsule if the asset isn't available.
-  if (window.PEP_BASE && !window.PEP_FAILED) {
-    const tmp = window.PEP_BASE.scene.clone(true);
-    const box = new THREE.Box3().setFromObject(tmp);
-    const size = new THREE.Vector3(); box.getSize(size);
-    const targetH = 1.7;                                   // close to the physics ragdoll height
-    const scale = targetH / Math.max(size.y, 0.1);
-    pepGroundOffset = -box.min.y * scale;
-    pepCx = (box.min.x + box.max.x) / 2 * scale;
-    pepCz = (box.min.z + box.max.z) / 2 * scale;
+  function _makeBearInstance(offsetX) {
+    const legBones = {};
+    let model = null, mixer = null;
+    const actions = {};
+    let groundOffset = 0, cx = 0, cz = 0;
 
-    pepModel = window.PEP_BASE.scene.clone(true);
-    pepModel.scale.setScalar(scale);
-    pepModel.traverse((o) => {
-      if (o.isMesh) {
-        o.castShadow = true;
-        o.receiveShadow = true;
-      }
-      // Find the leg bones by name and cache their bind-pose rotation.
-      // Bone names come from the GLTF; we use the user's part names.
-      if (o.name === "Left_Thigh-Local")  legBones.lThigh = { bone: o, restQuat: o.quaternion.clone() };
-      if (o.name === "Right_Thigh-Local") legBones.rThigh = { bone: o, restQuat: o.quaternion.clone() };
-      if (o.name === "Left_Leg-Local")    legBones.lShin  = { bone: o, restQuat: o.quaternion.clone() };
-      if (o.name === "Right_Leg-Local")   legBones.rShin  = { bone: o, restQuat: o.quaternion.clone() };
-    });
-    scene.add(pepModel);
+    if (window.PEP_BASE && !window.PEP_FAILED) {
+      const tmp = window.PEP_BASE.scene.clone(true);
+      const box = new THREE.Box3().setFromObject(tmp);
+      const size = new THREE.Vector3(); box.getSize(size);
+      const targetH = 1.7;
+      const scale = targetH / Math.max(size.y, 0.1);
+      groundOffset = -box.min.y * scale;
+      cx = (box.min.x + box.max.x) / 2 * scale;
+      cz = (box.min.z + box.max.z) / 2 * scale;
 
-    pepMixer = new THREE.AnimationMixer(pepModel);
-    window.PEP_BASE.animations.forEach((clip) => {
-      pepActions[clip.name] = pepMixer.clipAction(clip);
-    });
-    playClip("Idle 01", 0, true);
-  } else {
-    // Fallback: simple capsule so something still renders if PEP failed
-    pepModel = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.18, 1.0, 6, 12),
-      new THREE.MeshStandardMaterial({ color: 0x9bf0e0, roughness: 0.6 })
-    );
-    pepModel.position.y = 0.7;
-    pepModel.castShadow = true;
-    scene.add(pepModel);
+      model = window.PEP_BASE.scene.clone(true);
+      model.scale.setScalar(scale);
+      model.traverse((o) => {
+        if (o.isMesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+          // Clone materials so per-bear tints don't leak
+          if (o.material) {
+            const list = Array.isArray(o.material) ? o.material : [o.material];
+            const next = list.map((m) => m.clone());
+            o.material = Array.isArray(o.material) ? next : next[0];
+          }
+        }
+        if (o.name === "Left_Thigh-Local")  legBones.lHip  = { bone: o, restQuat: o.quaternion.clone() };
+        if (o.name === "Right_Thigh-Local") legBones.rHip  = { bone: o, restQuat: o.quaternion.clone() };
+        if (o.name === "Left_Leg-Local")    legBones.lShin = { bone: o, restQuat: o.quaternion.clone() };
+        if (o.name === "Right_Leg-Local")   legBones.rShin = { bone: o, restQuat: o.quaternion.clone() };
+      });
+      scene.add(model);
+
+      mixer = new THREE.AnimationMixer(model);
+      window.PEP_BASE.animations.forEach((clip) => {
+        actions[clip.name] = mixer.clipAction(clip);
+      });
+    } else {
+      // Fallback capsule
+      model = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.18, 1.0, 6, 12),
+        new THREE.MeshStandardMaterial({ color: 0x9bf0e0, roughness: 0.6 })
+      );
+      model.position.y = 0.7;
+      model.castShadow = true;
+      scene.add(model);
+    }
+
+    return {
+      model, mixer, actions, legBones,
+      currentAnim: null, currentAction: null,
+      pendingJoints: null,
+      groundOffset, cx, cz, offsetX,
+    };
   }
 
-  // Apply a single Rapier snapshot. snap.bodies.torso drives where the
-  // model is rendered.
-  function applySnapshot(snap) {
+  // Build POPULATION bears at fixed X offsets
+  for (let i = 0; i < POPULATION; i++) {
+    bears.push(_makeBearInstance(BEAR_OFFSETS[i]));
+  }
+
+  // Convenience refs that previously pointed at a single bear — kept for
+  // any code that didn't know about populations. They alias bears[0].
+  let pepModel = bears[0]?.model || null;
+  let pepMixer = bears[0]?.mixer || null;
+
+  function playClip(name, fadeS = 0.25, loop = true, bearIdx = 0) {
+    const b = bears[bearIdx];
+    if (!b || !b.mixer) return;
+    const next = b.actions[name];
+    if (!next) return;
+    if (b.currentAnim === name) return;
+    next.reset();
+    next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+    next.clampWhenFinished = !loop;
+    next.setEffectiveWeight(1);
+    next.setEffectiveTimeScale(1);
+    next.play();
+    if (b.currentAction && b.currentAction !== next) {
+      b.currentAction.crossFadeTo(next, fadeS, false);
+    }
+    b.currentAction = next;
+    b.currentAnim = name;
+  }
+  // Start each bear with idle
+  for (let i = 0; i < bears.length; i++) playClip("Idle 01", 0, true, i);
+
+  // Apply a single Rapier snapshot to bear `bearIdx`. snap.bodies.torso
+  // drives where THIS bear is rendered.
+  function applySnapshot(snap, bearIdx = 0) {
+    const b = bears[bearIdx];
+    if (!b || !b.model) return;
     const bodies = (snap && snap.bodies) || snap;
     const torso = bodies?.torso;
-    if (!torso || !pepModel) return;
-    // Position: ride the torso, but project feet to roughly ground level
-    pepModel.position.set(
-      torso.x - pepCx,
-      Math.max(0, torso.y - 0.9) + (pepGroundOffset || 0),  // 0.9 ≈ half ragdoll height
-      torso.z - pepCz
+    if (!torso) return;
+    b.model.position.set(
+      torso.x - b.cx + b.offsetX,                          // shift into this bear's lane
+      Math.max(0, torso.y - 0.9) + (b.groundOffset || 0),
+      torso.z - b.cz
     );
-    // Rotation: copy torso so the model tilts as balance is lost
-    pepModel.quaternion.set(torso.qx, torso.qy, torso.qz, torso.qw);
+    b.model.quaternion.set(torso.qx, torso.qy, torso.qz, torso.qw);
   }
 
-  // Bone-driving: overwrite the bear's leg bones with physics joint angles
-  // every frame, after the AnimationMixer has run. This makes the bear's
-  // legs visibly articulate with the brain's torque commands.
-  // Joints come in as { lHip, rHip, lKnee, rKnee } in radians.
-  // Bone-driving must run AFTER the AnimationMixer each frame, otherwise
-  // the Idle anim re-sets the leg bones and the physics-driven rotation
-  // is lost. So applyJointAngles just stashes the latest joint angles;
-  // renderFrame applies them post-mixer.
-  let pendingJoints = null;
-  const _legAxis = new THREE.Vector3(1, 0, 0);   // hips/knees rotate around X
+  const _legAxis = new THREE.Vector3(1, 0, 0);
   const _tmpQ = new THREE.Quaternion();
-  function applyJointAngles(joints) { pendingJoints = joints || null; }
+  function applyJointAngles(joints, bearIdx = 0) {
+    const b = bears[bearIdx];
+    if (!b) return;
+    b.pendingJoints = joints || null;
+  }
   function _flushJointAngles() {
-    if (!pendingJoints) return;
-    for (const name of ["lHip", "rHip", "lShin", "rShin"]) {
-      const entry = legBones[name];
-      if (!entry) continue;
-      let angle;
-      if (name === "lHip")  angle = pendingJoints.lHip  || 0;
-      else if (name === "rHip")  angle = pendingJoints.rHip  || 0;
-      else if (name === "lShin") angle = pendingJoints.lKnee || 0;
-      else if (name === "rShin") angle = pendingJoints.rKnee || 0;
-      _tmpQ.setFromAxisAngle(_legAxis, angle);
-      entry.bone.quaternion.copy(entry.restQuat).multiply(_tmpQ);
+    for (const b of bears) {
+      if (!b.pendingJoints) continue;
+      for (const name of ["lHip", "rHip", "lShin", "rShin"]) {
+        const entry = b.legBones[name];
+        if (!entry) continue;
+        let angle;
+        if (name === "lHip")       angle = b.pendingJoints.lHip  || 0;
+        else if (name === "rHip")  angle = b.pendingJoints.rHip  || 0;
+        else if (name === "lShin") angle = b.pendingJoints.lKnee || 0;
+        else                       angle = b.pendingJoints.rKnee || 0;
+        _tmpQ.setFromAxisAngle(_legAxis, angle);
+        entry.bone.quaternion.copy(entry.restQuat).multiply(_tmpQ);
+      }
     }
   }
 
-  // Map legBones key → physics body name used elsewhere
-  // (lHip joint controls lThigh bone; lKnee joint controls lShin bone)
-  // The applyJointAngles above expects legBones keyed by lHip/rHip/lShin/rShin.
-  // Rename the cached bones for clarity:
-  if (legBones.lThigh) { legBones.lHip  = legBones.lThigh; delete legBones.lThigh; }
-  if (legBones.rThigh) { legBones.rHip  = legBones.rThigh; delete legBones.rThigh; }
-  // (lShin / rShin keys already match)
-
-  function setFallen(fallen) {
-    if (!pepMixer) return;
-    if (fallen) playClip("Death 01", 0.2, false);
-    else        playClip("Idle 01",  0.3, true);
+  function setFallen(fallen, bearIdx = 0) {
+    if (fallen) playClip("Death 01", 0.2, false, bearIdx);
+    else        playClip("Idle 01",  0.3, true,  bearIdx);
   }
 
   function updateMixer(dt) {
-    if (pepMixer) pepMixer.update(dt);
+    for (const b of bears) {
+      if (b.mixer) b.mixer.update(dt);
+    }
   }
+
+  // How many visualised bears the scene supports — used by the trainer
+  // to know how many parallel trace slots to fill.
+  const populationSize = POPULATION;
 
   // Transient perturbation-cue marker (arrow that briefly appears at the
   // side that just pushed the ragdoll). Reused for both L2 and L3 envs.
@@ -1655,6 +1699,7 @@ function mountRagdollScene(container) {
   return {
     applySnapshot, applyJointAngles, setFallen, flashCue, renderFrame, dispose,
     setPropVisuals, applyPropsSnapshot, disposeProps, setView,
+    populationSize,
     get controls() { return controls; },
   };
 }
