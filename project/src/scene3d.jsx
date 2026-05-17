@@ -1440,38 +1440,6 @@ function mountRagdollScene(container) {
     }
   }
 
-  // Visual: PEP-Smol character riding the physics torso. The model's
-  // global position tracks the torso translation; its rotation copies
-  // the torso so you see the AI's tilt as it loses balance. Death anim
-  // plays when setFallen(true). Limbs don't articulate independently
-  // with the physics joints — that would need bone-driving (future
-  // work). For balance training the body-level tilt is enough.
-  let pepModel = null;
-  let pepMixer = null;
-  const pepActions = {};
-  let pepGroundOffset = 0;
-  let pepCx = 0, pepCz = 0;
-  let currentAnim = null;
-  let currentAction = null;
-
-  function playClip(name, fadeS = 0.25, loop = true) {
-    if (!pepMixer) return;
-    const next = pepActions[name];
-    if (!next) return;
-    if (currentAnim === name) return;
-    next.reset();
-    next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
-    next.clampWhenFinished = !loop;
-    next.setEffectiveWeight(1);
-    next.setEffectiveTimeScale(1);
-    next.play();
-    if (currentAction && currentAction !== next) {
-      currentAction.crossFadeTo(next, fadeS, false);
-    }
-    currentAction = next;
-    currentAnim = name;
-  }
-
   // ============================================================
   // POPULATION VIEW — N bears side by side, each with its own
   // PEP-Smol clone, mixer, leg bones, and X offset. Per-bear state
