@@ -1441,12 +1441,12 @@ function mountRagdollScene(container) {
   }
 
   // ============================================================
-  // POPULATION VIEW — N bears side by side, each with its own
-  // PEP-Smol clone, mixer, leg bones, and X offset. Per-bear state
-  // lives in `bears[i]`; API methods take an optional bearIdx.
+  // SINGLE BEAR VIEW — one PEP-Smol on the platform, focused.
+  // Was 4 bears side-by-side but that was confusing — training
+  // should highlight the best brain's performance.
   // ============================================================
-  const POPULATION = 4;
-  const BEAR_OFFSETS = [-1.8, -0.6, 0.6, 1.8];     // X positions on the platform
+  const POPULATION = 1;
+  const BEAR_OFFSETS = [0];     // centered on the platform
   const bears = [];   // each: { model, mixer, actions, legBones, currentAnim, currentAction, pendingJoints, groundOffset, cx, cz, offsetX }
 
   function _makeBearInstance(offsetX) {
@@ -1501,6 +1501,7 @@ function mountRagdollScene(container) {
     }
 
     return {
+      _id: offsetX,  // unique ID for smooth target tracking
       model, mixer, actions, legBones,
       currentAnim: null, currentAction: null,
       pendingJoints: null,
@@ -1557,6 +1558,7 @@ function mountRagdollScene(container) {
 
   const _legAxis = new THREE.Vector3(1, 0, 0);
   const _tmpQ = new THREE.Quaternion();
+  let _smoothTargets = {}; // per-bear smoothed joint angles
   function applyJointAngles(joints, bearIdx = 0) {
     const b = bears[bearIdx];
     if (!b) return;
@@ -1565,14 +1567,23 @@ function mountRagdollScene(container) {
   function _flushJointAngles() {
     for (const b of bears) {
       if (!b.pendingJoints) continue;
+      if (!_smoothTargets[b._id]) _smoothTargets[b._id] = { lHip: 0, rHip: 0, lKnee: 0, rKnee: 0 };
+      const tgt = _smoothTargets[b._id];
+      // Damp toward target angles for smooth bone movement
+      const DAMP = 0.35;
+      tgt.lHip = tgt.lHip + (b.pendingJoints.lHip - tgt.lHip) * DAMP;
+      tgt.rHip = tgt.rHip + (b.pendingJoints.rHip - tgt.rHip) * DAMP;
+      tgt.lKnee = tgt.lKnee + (b.pendingJoints.lKnee - tgt.lKnee) * DAMP;
+      tgt.rKnee = tgt.rKnee + (b.pendingJoints.rKnee - tgt.rKnee) * DAMP;
+
       for (const name of ["lHip", "rHip", "lShin", "rShin"]) {
         const entry = b.legBones[name];
         if (!entry) continue;
         let angle;
-        if (name === "lHip")       angle = b.pendingJoints.lHip  || 0;
-        else if (name === "rHip")  angle = b.pendingJoints.rHip  || 0;
-        else if (name === "lShin") angle = b.pendingJoints.lKnee || 0;
-        else                       angle = b.pendingJoints.rKnee || 0;
+        if (name === "lHip")       angle = tgt.lHip;
+        else if (name === "rHip")  angle = tgt.rHip;
+        else if (name === "lShin") angle = tgt.lKnee;
+        else                       angle = tgt.rKnee;
         _tmpQ.setFromAxisAngle(_legAxis, angle);
         entry.bone.quaternion.copy(entry.restQuat).multiply(_tmpQ);
       }

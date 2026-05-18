@@ -51,7 +51,7 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
   const stageRef = React.useRef(null);
   const sceneRef = React.useRef(null);
   const trainerRef = React.useRef(null);
-  const lastBestRef = React.useRef({ brain: null, traces: null });
+  const lastBestRef = React.useRef({ brain: null, traces: null, fitness: 0 });
   // Playback now holds an ARRAY of traces (one per visualised bear), all
   // advanced in lockstep so the population view stays synchronised.
   const playbackRef = React.useRef({ traces: null, idx: 0, lastT: 0 });
@@ -242,7 +242,7 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
     // Seed from saved brain (only if arch matches the new env)
     const seedJson = existingBrain;
     const seed = seedJson ? window.brainEngine.brainFromJSON(seedJson) : null;
-    lastBestRef.current = { brain: null, traces: null };
+    lastBestRef.current = { brain: null, traces: null, fitness: 0 };
     const visPop = sceneRef.current?.populationSize || 1;
     const t = window.brainEngine.startTrainer({
       env,
@@ -250,7 +250,7 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
       visPopulation: visPop,
       seedBrain: seed,
       onGenerationDone: ({ gen, bestFitness, avgFitness, bestBrain, traces }) => {
-        lastBestRef.current = { brain: bestBrain, traces };
+        lastBestRef.current = { brain: bestBrain, traces, fitness: bestFitness };
       },
     });
     trainerRef.current = t;
@@ -336,6 +336,7 @@ function SkillTrainer({ uid, skillId, level, profile, brains, onSpendCoins, onTo
           </div>
           <div className="training-hud__tag">
             GEN {stats.gen}
+            {stats.best > 0 && <span style={{ color: "var(--mint)", marginLeft: 6 }}>↑{(stats.best - (lastBestRef.current?.fitness || 0)).toFixed(2)}</span>}
           </div>
         </div>
         {/* Physics indicator pinned bottom-right */}
