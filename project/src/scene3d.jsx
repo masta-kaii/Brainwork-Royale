@@ -1438,6 +1438,67 @@ function mountRagdollScene(container) {
   const BEAR_OFFSETS = [0];     // centered on the platform
   const bears = [];   // each: { model, mixer, actions, legBones, currentAnim, currentAction, pendingJoints, groundOffset, cx, cz, offsetX }
 
+  // Try loading PEP-Smol directly when the app preloader failed.
+  // Uses window.GLTFLoader + window.DRACOLoader (exposed in app.html).
+  function tryLoadPepSmolIntoScene(scene, bears, offsetX) {
+    if (!window.GLTFLoader) return;
+    const loader = new window.GLTFLoader();
+    if (window.DRACOLoader) {
+      const dracoLoader = new window.DRACOLoader();
+      dracoLoader.setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+      loader.setDRACOLoader(dracoLoader);
+    }
+    const onSuccess = (gltf) => {
+      if (!gltf || !gltf.scene) return;
+      const model = gltf.scene;
+      const box = new window.THREE.Box3().setFromObject(model);
+      const size = new window.THREE.Vector3(); box.getSize(size);
+      const targetH = 2.27;
+      const scale = targetH / Math.max(size.y, 0.1);
+      const groundOffset = -box.min.y * scale;
+      model.scale.setScalar(scale);
+      model.traverse((o) => {
+        if (o.isMesh) {
+          o.castShadow = true; o.receiveShadow = true;
+          if (o.material) { o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; }
+        }
+      });
+      model.position.set(offsetX, groundOffset, -1);
+      model.castShadow = true; model.receiveShadow = true;
+      // Remove old placeholder
+      const oldBear = bears[0];
+      if (oldBear && oldBear.model) scene.remove(oldBear.model);
+      // Build new bear with real model
+      const bear = { _id: offsetX, model, mixer: null, actions: {}, legBones: {}, currentAnim: null, currentAction: null, pendingJoints: null, groundOffset, cx: 0, cz: 0, offsetX };
+      if (gltf.animations && gltf.animations.length) {
+        bear.mixer = new window.THREE.AnimationMixer(model);
+        gltf.animations.forEach((clip) => { bear.actions[clip.name] = bear.mixer.clipAction(clip); });
+        const idle = gltf.animations.find(c => /idle 01/i.test(c.name)) || gltf.animations[0];
+        if (idle) { const action = bear.mixer.clipAction(idle); action.play(); bear.currentAction = action; bear.currentAnim = idle.name; }
+      }
+      scene.add(model);
+      bears[0] = bear;
+      console.log("[scene3d] PEP-Smol loaded directly. anims=" + gltf.animations.length);
+    };
+    const onError = (e) => {
+      console.warn("[scene3d] Direct PEP-Smol load failed:", e?.message || e);
+      // Try uncompressed fallback
+      const loader2 = new window.GLTFLoader();
+      loader2.load(
+        'assets/pep-smol.gltf',
+        onSuccess,
+        (xhr) => { /* progress */ },
+        (e2) => { console.warn("[scene3d] Uncompressed fallback also failed:", e2?.message || e2); }
+      );
+    };
+    loader.load(
+      'assets/pep-smol-draco.glb',
+      onSuccess,
+      (xhr) => { /* progress */ },
+      onError
+    );
+  }
+
   function _makeBearInstance(offsetX) {
     const legBones = {};
     let model = null, mixer = null;
@@ -1493,12 +1554,22 @@ function mountRagdollScene(container) {
       });
     }
 
-    // If model is null (PEP-Smol not loaded), create a simple placeholder
+    // If model is null (PEP-Smol not loaded), create a prominent placeholder
     if (!model) {
-      model = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.22, 0.8, 8, 16),
-        new THREE.MeshStandardMaterial({ color: 0x5df2d6, roughness: 0.4, emissive: 0x1a4a3a, emissiveIntensity: 0.6 })
+      // Ground marker — impossible to miss
+      const markerGeo = new window.THREE.RingGeometry(0.3, 0.5, 32);
+      const marker = new window.THREE.Mesh(markerGeo, new window.THREE.MeshBasicMaterial({ color: 0xff4488, side: window.THREE.DoubleSide }));
+      marker.rotation.x = -Math.PI / 2;
+      marker.position.set(offsetX, 0.05, -1);
+      marker.name = "PLACEHOLDER_MARKER";
+      scene.add(marker);
+
+      model = new window.THREE.Mesh(
+        new window.THREE.CapsuleGeometry(0.25, 1.0, 8, 16),
+        new window.THREE.MeshStandardMaterial({ color: 0x5df2d6, roughness: 0.3, emissive: 0x2a8a7a, emissiveIntensity: 0.8 })
       );
+      // Try loading PEP-Smol directly as a fallback
+      tryLoadPepSmolIntoScene(scene, bears, BEAR_OFFSETS[0] || 0);
     }
 
     model.position.set(offsetX, groundOffset, -1);

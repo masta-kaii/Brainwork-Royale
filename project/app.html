@@ -102,9 +102,11 @@
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     window.THREE = THREE;
     window.GLTFLoader = GLTFLoader;
+    window.DRACOLoader = DRACOLoader;
     window.OrbitControls = OrbitControls;
 
     // Pre-load PEP-Smol once for the whole app — try Draco-compressed GLB first,
@@ -116,16 +118,14 @@
     async function loadPep() {
       const loader = new GLTFLoader();
 
-      // Try Draco-compressed first
+      // Draco decoder — required for compressed GLB
       try {
-        const dracoModule = await import('three/addons/loaders/DRACOLoader.js');
-        const DRACOLoader = dracoModule.DRACOLoader;
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
         loader.setDRACOLoader(dracoLoader);
         window.setBootStatus("DRACO DECODER READY");
       } catch (e) {
-        console.warn("Draco loader unavailable, falling back to uncompressed", e);
+        console.warn("Draco loader unavailable, will try uncompressed", e);
       }
 
       const doLoad = (url, isFallback) => new Promise((resolve, reject) => {
