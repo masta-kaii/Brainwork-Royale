@@ -232,8 +232,8 @@ function createRagdoll(world, originX = 0, originZ = 0) {
     bodies: { torso, lThigh, rThigh, lShin, rShin, lFoot, rFoot },
     joints: { lHip, rHip, lKnee, rKnee, lAnkle, rAnkle },
     spawnY: TORSO_Y,
-    feetY: FOOT_Y - FOOT_R - 0.02,
-    torsoToFeet: TORSO_Y - (FOOT_Y - FOOT_R - 0.02),
+    feetY: FOOT_Y - FOOT_HALF - FOOT_R,       // actual foot bottom
+    torsoToFeet: TORSO_Y - (FOOT_Y - FOOT_HALF - FOOT_R),
     torsoHalf: TORSO_HALF,
     torsoRadius: TORSO_R,
     thighHalf: THIGH_HALF,
@@ -344,7 +344,10 @@ function evalEnvBatch(env, brains, opts = {}) {
     const world = worldFactory();
     const envState = env.build(world);
     if (env.buildProps) envState.props = env.buildProps(world);
-    return {
+  // Expose measurements so the renderer can track the model correctly
+  window._ragdollTorsoToFeet = TORSO_Y - (FOOT_Y - FOOT_HALF - FOOT_R);
+
+  return {
       world, envState, brain,
       alive: true,
       ticks: 0,

@@ -1632,6 +1632,21 @@ function mountRagdollScene(container) {
   // TORSO_TO_FEET = ~1.79m — distance from ragdoll torso center to feet.
   // Computed from PEP-Smol proportions: TORSO_Y(1.72) - feet(-0.07) = 1.79
   const TORSO_TO_FEET = 1.79;
+
+  // Physics body position indicators — small colored spheres at each ragdoll body
+  const bodyMarkers = {};
+  const markerColors = { torso: 0x5df2d6, lThigh: 0x5dd3f2, rThigh: 0x45d3ff, lShin: 0xffb84d, rShin: 0xff8b45, lFoot: 0xff5577, rFoot: 0xff4d9d };
+  for (const [key, color] of Object.entries(markerColors)) {
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 8, 6),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, depthTest: false })
+    );
+    sphere.renderOrder = 999;
+    sphere.visible = false;
+    scene.add(sphere);
+    bodyMarkers[key] = sphere;
+  }
+
   function applySnapshot(snap, bearIdx = 0) {
     const b = bears[bearIdx];
     if (!b || !b.model) return;
@@ -1639,12 +1654,24 @@ function mountRagdollScene(container) {
     const torso = bodies?.torso;
     if (!torso) return;
     // Position model so its feet align with physics feet
+    const ttF = (typeof window._ragdollTorsoToFeet === 'number') ? window._ragdollTorsoToFeet : TORSO_TO_FEET;
     b.model.position.set(
       torso.x - b.cx + b.offsetX,
-      Math.max(0, torso.y - TORSO_TO_FEET) + (b.groundOffset || 0),
+      Math.max(0, torso.y - ttF) + (b.groundOffset || 0),
       torso.z - b.cz
     );
     b.model.quaternion.set(torso.qx, torso.qy, torso.qz, torso.qw);
+
+    // Update physics body position indicators
+    for (const [key, sphere] of Object.entries(bodyMarkers)) {
+      const body = bodies[key];
+      if (body) {
+        sphere.visible = true;
+        sphere.position.set(body.x, body.y, body.z);
+      } else {
+        sphere.visible = false;
+      }
+    }
   }
 
   const _legAxis = new THREE.Vector3(1, 0, 0);
