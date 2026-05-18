@@ -445,6 +445,24 @@ function offlineFallbackState(user) {
   };
 }
 
+function refreshDailyQuests(state, uid) {
+  if (!uid || !state?.quests?.length || !window.dataLayer) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const lastReset = sessionStorage.getItem(`questReset_${uid}`);
+  if (lastReset === today) return; // already refreshed today
+  sessionStorage.setItem(`questReset_${uid}`, today);
+
+  // Reset any quest that was completed on a previous day
+  state.quests.forEach((q) => {
+    if (q.status === "completed") {
+      q.status = "active";
+      q.progress = 0;
+      q.rewardClaimed = false;
+      q.completedAt = null;
+    }
+  });
+}
+
 function boot() {
   window.setBootProgress(10);
 
@@ -506,6 +524,12 @@ function boot() {
     }
     window.setBootStatus("MOUNTING APP…");
     window.setBootProgress(100);
+
+    // Client-side daily quest refresh — reset quests that were completed
+    // yesterday so they're fresh for today. (Server-side reset is handled
+    // by the dailyQuestReset Cloud Function once on Blaze.)
+    refreshDailyQuests(initialState, user.uid);
+
     mountApp(user, initialState);
   });
 }

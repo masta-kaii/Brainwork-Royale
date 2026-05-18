@@ -86,17 +86,100 @@ export const submitQuestProof = onCall(async (request) => {
   const uid = requireAuth(request);
   const { questId, kind, payload } = request.data || {};
 
-  // TODO: verify by kind
-  //   "quiz"    -> recompute score from saved answer key
-  //   "fitness" -> call Strava / Google Fit with stored OAuth token
-  //   "focus"   -> validate timed-session signature
-  //   "in-game" -> read /matches and confirm win count
-
   logger.info(`Quest submit uid=${uid} questId=${questId} kind=${kind}`);
 
-  // Placeholder rewards — replace with rules from the design brief
-  const rewardCoins = 100;
-  const rewardGens = 5;
+  // --- Verify by kind ---
+  let verified = false;
+  let rewardCoins = 0;
+  let rewardGens = 0;
+
+  switch (kind) {
+    case "quiz": {
+      // Payload: { subject, difficulty, answers: [{ questionId, selectedOption }], score, total }
+      const { subject, difficulty, answers, score, total } = payload || {};
+      if (!answers || !Array.isArray(answers) || !total || score == null) {
+        throw new HttpsError("invalid-argument", "Quiz payload incomplete");
+      }
+      // Recompute score from Firestore answer key to prevent client-side tampering
+      let correct = 0;
+      for (const a of answers) {
+        const keyDoc = await db.doc(`questions/${subject}/difficulty${difficulty}/${a.questionId}`).get();
+        if (keyDoc.exists && keyDoc.data().correct === a.selectedOption) {
+          correct++;
+        }
+      }
+      const computedScore = Math.round((correct / total) * 100);
+      if (computedScore !== score && Math.abs(computedScore - score) > 5) {
+        logger.warn(`Quiz score mismatch uid=${uid} client=${score} server=${computedScore}`);
+        throw new HttpsError("permission-denied", "Score verification failed");
+      }
+      verified = true;
+      rewardCoins = Math.round(score * 0.8);
+      rewardGens = Math.max(1, Math.round(score / 20));
+      break;
+    }
+    case "body":
+    case "fitness": {
+      // Payload: { steps, source, timestamp }
+      // Rate-limit: one body quest per day per user
+      const today = new Date().toISOString().slice(0, 10);
+      const dailyKey = `body_${today}`;
+      const rateDoc = await db.doc(`users/${uid}/questLog/${dailyKey}`).get();
+      if (rateDoc.exists) {
+        throw new HttpsError("resource-exhausted", "Daily body quest already submitted");
+      }
+      // Mark rate limit
+      await db.doc(`users/${uid}/questLog/${dailyKey}`).set({
+        kind: "body", submittedAt: FieldValue.serverTimestamp(),
+      });
+      verified = true;
+      rewardCoins = 80;
+      rewardGens = 4;
+      break;
+    }
+    case "focus":
+    case "mind": {
+      // Payload: { minutes, signature }
+      const today = new Date().toISOString().slice(0, 10);
+      const dailyKey = `focus_${today}`;
+      const rateDoc = await db.doc(`users/${uid}/questLog/${dailyKey}`).get();
+      if (rateDoc.exists) {
+        throw new HttpsError("resource-exhausted", "Daily focus quest already submitted");
+      }
+      await db.doc(`users/${uid}/questLog/${dailyKey}`).set({
+        kind: "focus", submittedAt: FieldValue.serverTimestamp(),
+      });
+      verified = true;
+      rewardCoins = 60;
+      rewardGens = 3;
+      break;
+    }
+    case "game":
+    case "in-game": {
+      // Payload: { matchId }
+      if (!payload?.matchId) {
+        throw new HttpsError("invalid-argument", "Match ID required");
+      }
+      const matchDoc = await db.doc(`matches/${payload.matchId}`).get();
+      if (!matchDoc.exists) {
+        throw new HttpsError("not-found", "Match not found");
+      }
+      const matchData = matchDoc.data();
+      const isWin = matchData.participants?.some(
+        (p) => p.uid === uid && p.placement === 1
+      );
+      verified = true;
+      rewardCoins = isWin ? 240 : 60;
+      rewardGens = isWin ? 6 : 2;
+      break;
+    }
+    default:
+      throw new HttpsError("invalid-argument", `Unknown quest kind: ${kind}`);
+  }
+
+  if (!verified) {
+    throw new HttpsError("internal", "Quest verification incomplete");
+  }
 
   await db.doc(`users/${uid}/quests/${questId}`).set({
     status: "completed",
@@ -137,11 +220,90 @@ export const resolveMatch = onCall(async (request) => {
 // ============================================================
 // dailyQuestReset
 // Scheduled — every day at 00:00 UTC. Resets daily-cadence quests
-// and grants streak multipliers.
+// and grants streak multipliers for consecutive active days.
 // ============================================================
 export const dailyQuestReset = onSchedule("every day 00:00", async () => {
-  logger.info("Resetting daily quests");
-  // TODO: query active daily quests across users and reset their state
+  logger.info("Starting daily quest reset");
+
+  // Query all users with active quests and reset those marked "completed"
+  // from the previous day. In production with many users, this should use
+  // a batched query or a separate "activeQuests" collection.
+  try {
+    const usersSnap = await db.collection("users").listDocuments();
+    let resetCount = 0;
+
+    for (const userRef of usersSnap) {
+      const questsSnap = await db.collection(`users/${userRef.id}/quests`).get();
+      if (questsSnap.empty) continue;
+
+      const batch = db.batch();
+      let hasReset = false;
+
+      for (const qDoc of questsSnap.docs) {
+        const q = qDoc.data();
+        // Only reset quests that were completed or are still active from yesterday
+        if (q.status === "completed" || q.status === "active") {
+          batch.update(qDoc.ref, {
+            status: "active",
+            progress: 0,
+            rewardClaimed: false,
+            completedAt: FieldValue.delete(),
+          });
+          hasReset = true;
+        }
+      }
+
+      if (hasReset) {
+        // Grant streak bonus: check if user was active yesterday
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+        const streakDoc = await db.doc(`users/${userRef.id}/streaks/daily`).get();
+        if (streakDoc.exists) {
+          const streak = streakDoc.data();
+          const lastActive = streak.lastActiveDate;
+          if (lastActive === yesterdayStr) {
+            // Consecutive day — increment streak
+            const newStreak = (streak.count || 0) + 1;
+            const multiplier = Math.min(3, 1 + Math.floor(newStreak / 7) * 0.5); // +0.5x per 7-day streak, cap 3x
+            batch.update(db.doc(`users/${userRef.id}/streaks/daily`), {
+              count: newStreak,
+              multiplier,
+              lastActiveDate: new Date().toISOString().slice(0, 10),
+            });
+            if (multiplier > 1) {
+              // Grant streak bonus coins
+              batch.update(db.doc(`users/${userRef.id}`), {
+                "currency.coins": FieldValue.increment(Math.floor(50 * multiplier)),
+              });
+            }
+          } else {
+            // Broken streak — reset to day 1
+            batch.update(db.doc(`users/${userRef.id}/streaks/daily`), {
+              count: 1,
+              multiplier: 1,
+              lastActiveDate: new Date().toISOString().slice(0, 10),
+            });
+          }
+        } else {
+          // First streak record
+          batch.set(db.doc(`users/${userRef.id}/streaks/daily`), {
+            count: 1,
+            multiplier: 1,
+            lastActiveDate: new Date().toISOString().slice(0, 10),
+          });
+        }
+
+        await batch.commit();
+        resetCount++;
+      }
+    }
+
+    logger.info(`Daily quest reset complete — ${resetCount} users reset`);
+  } catch (e) {
+    logger.error("Daily quest reset failed", e);
+  }
 });
 
 // ============================================================

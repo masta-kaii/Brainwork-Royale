@@ -1015,13 +1015,23 @@
     <section class="section" style="padding-top: 24px">
       <div class="cta">
         <div>
-          <h2 class="cta__title">The beta opens in 8 days.</h2>
+          <h2 class="cta__title">The beta opens in <span id="countdown" style="color:var(--mint)">--</span>.</h2>
           <p class="cta__sub">No credit card. Free for the first 5,000 wardens. Brings your AI, your quests, your replays — across desktop, tablet and mobile.</p>
         </div>
         <div class="cta__actions">
-          <button class="btn btn--primary" data-modal="signup">Reserve a slot</button>
+          <button class="btn btn--primary" id="reserveBtn">Reserve a slot</button>
           <a class="btn btn--ghost" href="app.html">Try the demo</a>
         </div>
+      </div>
+      <!-- Waitlist form (hidden until Reserve clicked) -->
+      <div id="waitlistForm" style="display:none; margin-top:20px; padding:24px; background:var(--bg-1); border:1px solid var(--line); border-radius:var(--r-xl); max-width:520px">
+        <div style="font-family:var(--font-display); font-size:14px; font-weight:700; color:var(--ink-0); margin-bottom:6px">RESERVE YOUR WARDEN SLOT</div>
+        <div style="font-size:12px; color:var(--ink-2); margin-bottom:16px">Enter your email. You'll get a confirmation when the beta opens.</div>
+        <div style="display:flex; gap:8px">
+          <input id="waitlistEmail" type="email" placeholder="warden@brainwork.gg" style="flex:1; padding:11px 14px; background:var(--bg-0); border:1px solid var(--line); border-radius:10px; color:var(--ink-0); font-size:14px; font-family:var(--font-body)" />
+          <button class="btn btn--primary" id="waitlistSubmit">COUNT ME IN →</button>
+        </div>
+        <div id="waitlistMsg" style="margin-top:12px; font-size:11px; font-family:var(--font-display); color:var(--mint); min-height:20px"></div>
       </div>
     </section>
 
@@ -1704,6 +1714,92 @@ function renderBearSVG(pat, pal) {
   return `<svg viewBox="0 0 100 100" style="width:100%;height:100%;position:relative;z-index:1" shape-rendering="crispEdges">${cells}</svg>`;
 }
 
+</script>
+
+<!-- ===== COUNTDOWN + WAITLIST ===== -->
+<script>
+(function() {
+  // --- Live countdown to S03 launch (May 24, 2026 00:00 MYT = UTC+8) ---
+  const TARGET = new Date('2026-05-24T00:00:00+08:00');
+  const el = document.getElementById('countdown');
+  function tick() {
+    const diff = TARGET - Date.now();
+    if (diff <= 0) { if (el) el.textContent = 'NOW!'; return; }
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    if (el) el.textContent = `${d}d ${h}h ${m}m ${s}s`;
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  // --- Waitlist: Reserve a slot → Firestore /waitlist/{email} ---
+  const reserveBtn = document.getElementById('reserveBtn');
+  const waitlistForm = document.getElementById('waitlistForm');
+  const waitlistEmail = document.getElementById('waitlistEmail');
+  const waitlistSubmit = document.getElementById('waitlistSubmit');
+  const waitlistMsg = document.getElementById('waitlistMsg');
+
+  if (reserveBtn) {
+    reserveBtn.addEventListener('click', () => {
+      if (waitlistForm) waitlistForm.style.display = 'block';
+      reserveBtn.style.display = 'none';
+    });
+  }
+
+  if (waitlistSubmit && waitlistEmail) {
+    waitlistSubmit.addEventListener('click', async () => {
+      const email = waitlistEmail.value.trim();
+      if (!email || !email.includes('@')) {
+        if (waitlistMsg) waitlistMsg.textContent = '⚠ Please enter a valid email';
+        return;
+      }
+      if (waitlistMsg) waitlistMsg.textContent = 'RESERVING…';
+      waitlistSubmit.disabled = true;
+
+      try {
+        if (window.firebase) {
+          const { db, doc, setDoc, serverTimestamp, getDoc } = window.firebase;
+          const ref = doc(db, 'waitlist', email);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            if (waitlistMsg) waitlistMsg.textContent = `✓ You're already on the list. See you May 24!`;
+          } else {
+            await setDoc(ref, {
+              email,
+              createdAt: serverTimestamp(),
+              source: location.search.includes('ref=') ? new URLSearchParams(location.search).get('ref') : 'direct',
+            });
+            if (waitlistMsg) waitlistMsg.textContent = `✓ Reserved! You're warden #—. You'll get an email when the beta opens.`;
+          }
+        } else {
+          // Firebase not loaded yet — store locally and retry
+          localStorage.setItem('waitlistEmail', email);
+          if (waitlistMsg) waitlistMsg.textContent = '✓ Stored locally. Will sync when Firebase loads.';
+          window.addEventListener('firebase-ready', async () => {
+            if (window.firebase) {
+              const { db, doc, setDoc, serverTimestamp, getDoc } = window.firebase;
+              const ref = doc(db, 'waitlist', email);
+              const snap = await getDoc(ref);
+              if (!snap.exists()) {
+                await setDoc(ref, {
+                  email,
+                  createdAt: serverTimestamp(),
+                  source: location.search.includes('ref=') ? new URLSearchParams(location.search).get('ref') : 'direct',
+                });
+              }
+            }
+          }, { once: true });
+        }
+      } catch (e) {
+        console.warn('Waitlist save failed', e);
+        if (waitlistMsg) waitlistMsg.textContent = '⚠ Could not reach server. Try again in a moment.';
+      }
+      if (waitlistSubmit) waitlistSubmit.disabled = false;
+    });
+  }
+})();
 </script>
 </body>
 </html>
