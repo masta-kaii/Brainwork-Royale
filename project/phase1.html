@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brainwork Royale — Phase 1</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  background: #0a0d14; color: #e0e4f0;
+  min-height: 100vh;
+  display: grid; place-items: center;
+}
+#app {
+  max-width: 900px; width: 100%;
+  padding: 24px;
+  display: grid; gap: 20px;
+}
+/* ---- header ---- */
+.header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.header h1 { font-size: 20px; font-weight: 800; color: #5df2d6; letter-spacing: 0.04em; }
+.header span { font-size: 11px; color: #5a608a; letter-spacing: 0.1em; }
+/* ---- main layout ---- */
+.main { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
+@media (max-width: 720px) { .main { grid-template-columns: 1fr; } }
+/* ---- canvas ---- */
+.canvas-wrap {
+  background: #050810; border: 1px solid #2a3052;
+  border-radius: 12px; overflow: hidden;
+  aspect-ratio: 1;
+  position: relative;
+}
+canvas { width: 100%; height: 100%; display: block; }
+/* ---- HUD ---- */
+.hud {
+  position: absolute; top: 10px; left: 10px; right: 10px;
+  display: flex; justify-content: space-between; gap: 8px;
+  pointer-events: none;
+}
+.hud-tag {
+  background: rgba(0,0,0,0.6); border: 1px solid #2a3052;
+  padding: 4px 10px; border-radius: 6px;
+  font-size: 10px; letter-spacing: 0.12em; color: #8b91b8;
+  backdrop-filter: blur(4px);
+}
+/* ---- sidebar ---- */
+.sidebar { display: flex; flex-direction: column; gap: 14px; }
+.panel {
+  background: #0b0d16; border: 1px solid #1b203a;
+  border-radius: 10px; padding: 14px;
+}
+.panel-title {
+  font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #5a608a; margin-bottom: 10px;
+}
+/* ---- quiz ---- */
+.quiz-q { font-size: 13px; font-weight: 600; color: #f3f5ff; margin-bottom: 8px; line-height: 1.4; }
+.quiz-opts { display: grid; gap: 6px; }
+.quiz-opt {
+  padding: 8px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid #2a3052; background: #131626; color: #cdd2ee;
+  font-size: 12px; font-family: inherit; text-align: left;
+  transition: border-color 120ms, background 120ms;
+}
+.quiz-opt:hover { border-color: #5a608a; background: #1c2138; }
+.quiz-opt.correct { border-color: #5df2d6; background: rgba(93,242,214,0.08); color: #5df2d6; }
+.quiz-opt.wrong { border-color: #ff4d9d; background: rgba(255,77,157,0.08); color: #ff4d9d; }
+.quiz-feedback { font-size: 11px; margin-top: 6px; min-height: 16px; letter-spacing: 0.06em; }
+/* ---- stats ---- */
+.stat-row { display: grid; grid-template-columns: 1fr 40px auto; align-items: center; gap: 8px; margin: 4px 0; font-size: 11px; }
+.stat-name { color: #8b91b8; font-size: 10px; letter-spacing: 0.08em; }
+.stat-val { color: #cdd2ee; font-weight: 600; text-align: right; }
+.stat-bar { height: 6px; background: #1c2138; border-radius: 999px; overflow: hidden; flex: 1; }
+.stat-fill { height: 100%; border-radius: 999px; background: #5df2d6; transition: width 300ms; }
+.upgrade-btn {
+  font-size: 10px; padding: 3px 8px; border-radius: 4px; cursor: pointer;
+  border: 1px solid #5df2d6; background: transparent; color: #5df2d6;
+  font-family: inherit; letter-spacing: 0.06em;
+}
+.upgrade-btn:hover { background: rgba(93,242,214,0.1); }
+.upgrade-btn:disabled { opacity: 0.3; cursor: default; }
+.points-badge {
+  font-size: 10px; color: #ffb84d; letter-spacing: 0.1em;
+  padding: 2px 8px; border: 1px solid rgba(255,184,77,0.3); border-radius: 999px;
+  background: rgba(255,184,77,0.08);
+}
+/* ---- buttons ---- */
+.btn-row { display: flex; gap: 8px; }
+.btn {
+  padding: 10px 18px; border-radius: 8px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  border: 1px solid #2a3052; background: #131626; color: #f3f5ff;
+  transition: background 120ms, border-color 120ms;
+}
+.btn:hover { background: #1c2138; border-color: #5a608a; }
+.btn--primary {
+  background: #5df2d6; color: #0a0d14; border-color: #5df2d6;
+  box-shadow: 0 4px 20px rgba(93,242,214,0.2);
+}
+.btn--primary:hover { background: #7df8e6; }
+.btn--primary:disabled { opacity: 0.3; cursor: default; box-shadow: none; }
+.btn--sm { padding: 6px 12px; font-size: 10px; }
+/* ---- result ---- */
+.result { text-align: center; padding: 20px 0; }
+.result__status { font-size: 28px; font-weight: 800; color: #5df2d6; letter-spacing: 0.02em; }
+.result__time { font-size: 13px; color: #8b91b8; margin-top: 4px; }
+/* ---- particles ---- */
+.particle {
+  position: absolute; width: 6px; height: 6px; border-radius: 50%;
+  pointer-events: none; animation: particlePop 600ms ease-out forwards;
+}
+@keyframes particlePop {
+  0% { transform: translate(0,0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+}
+/* ---- share toast ---- */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #131626; border: 1px solid #5df2d6; border-radius: 8px;
+  padding: 10px 20px; font-size: 12px; color: #5df2d6;
+  animation: toastIn 300ms ease-out;
+  pointer-events: none; z-index: 100;
+}
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <div><h1>BRAINWORK ROYALE</h1><span>Phase 1 · prototype</span></div>
+    <button class="btn btn--sm" id="newMazeBtn">NEW MAZE</button>
+  </div>
+
+  <div class="main">
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="canvas"></canvas>
+      <div class="hud">
+        <span class="hud-tag" id="hudState">READY</span>
+        <span class="hud-tag" id="hudTicks">0 ticks</span>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <!-- Quiz -->
+      <div class="panel" id="quizPanel">
+        <div class="panel-title">Quiz · earn upgrade points</div>
+        <div id="quizContent"></div>
+      </div>
+
+      <!-- Upgrades -->
+      <div class="panel">
+        <div class="panel-title">Upgrades <span class="points-badge" id="pointsBadge">0 pts</span></div>
+        <div id="upgrades">
+          <div class="stat-row">
+            <span class="stat-name">SIGHT</span>
+            <span class="stat-val" id="sightVal">2</span>
+            <button class="upgrade-btn" id="upSight">+1</button>
+          </div>
+          <div class="stat-row">
+            <span class="stat-name">SPEED</span>
+            <span class="stat-val" id="speedVal">1.0×</span>
+            <button class="upgrade-btn" id="upSpeed">+1</button>
+          </div>
+          <div class="stat-row">
+            <span class="stat-name">MEMORY</span>
+            <span class="stat-val" id="memVal">16</span>
+            <button class="upgrade-btn" id="upMem">+1</button>
+          </div>
+          <div class="stat-row">
+            <span class="stat-name">TURN</span>
+            <span class="stat-val" id="turnVal">1.0×</span>
+            <button class="upgrade-btn" id="upTurn">+1</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="panel">
+        <div class="panel-title">Run</div>
+        <div class="btn-row">
+          <button class="btn btn--primary" id="runBtn" style="flex:1">▶ RUN</button>
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn btn--sm" id="speed1">1×</button>
+          <button class="btn btn--sm" id="speed2">2×</button>
+          <button class="btn btn--sm" id="speed5">5×</button>
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn btn--sm" id="shareBtn">📋 Share seed</button>
+        </div>
+        <div id="result" class="result" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// SEEDED PRNG — xorshift32. Only source of randomness, ever.
+// ============================================================
+function createRNG(seed) {
+  let s = seed | 0 || 1;
+  if (s === 0) s = 1;
+  return function next() {
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
+    return (s >>> 0) / 0xffffffff;
+  };
+}
+
+// ============================================================
+// MAZE GENERATOR — recursive backtracker
+// ============================================================
+function generateMaze(cols, rows, seed) {
+  const rand = createRNG(seed);
+  // 1 = wall, 0 = open
+  const grid = Array.from({ length: rows }, () => Array(cols).fill(1));
+  // Work on odd-sized interior grid
+  const W = Math.floor((cols - 1) / 2);
+  const H = Math.floor((rows - 1) / 2);
+  const visited = Array.from({ length: H }, () => Array(W).fill(false));
+
+  function cellTo(cx, cy) { return [cx * 2 + 1, cy * 2 + 1]; }
+
+  function carve(cx, cy) {
+    visited[cy][cx] = true;
+    const [gx, gy] = cellTo(cx, cy);
+    grid[gy][gx] = 0;
+    const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    // Shuffle
+    for (let i = dirs.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+    }
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx >= 0 && ny >= 0 && nx < W && ny < H && !visited[ny][nx]) {
+        const [gx1, gy1] = cellTo(cx, cy);
+        const [gx2, gy2] = cellTo(nx, ny);
+        grid[(gy1 + gy2) / 2][(gx1 + gx2) / 2] = 0;
+        carve(nx, ny);
+      }
+    }
+  }
+
+  carve(0, 0);
+  return { grid, cols, rows, start: [1, 1], exit: [cols - 2, rows - 2] };
+}
+
+// ============================================================
+// AGENT STATE
+// ============================================================
+function createAgent(maze, upgrades) {
+  const [sx, sy] = maze.start;
+  const sight = 2 + (upgrades.sight || 0);
+  const memorySize = 16 + (upgrades.memory || 0) * 4;
+  return {
+    x: sx + 0.5, y: sy + 0.5,     // continuous position in cell units
+    prevX: sx + 0.5, prevY: sy + 0.5,
+    dir: 0,                         // radians (0 = right, π/2 = down)
+    sight,                          // how many tiles ahead the agent can see
+    memorySize,                     // how many recent positions remembered
+    memory: [],                     // [[x, y], ...] — ring buffer
+    speed: 0.12 + (upgrades.speed || 0) * 0.04,
+    turnRate: 1.0 + (upgrades.turn || 0) * 0.5,
+    alive: true,
+    reached: false,
+  };
+}
+
+// ============================================================
+// TICK FUNCTION — pure: (maze, agent, rng) → agent
+// Uses wall-following (right-hand rule) with upgrade-modulated behaviour.
+// ============================================================
+function tick(maze, agent, rng) {
+  if (!agent.alive || agent.reached) return agent;
+
+  const a = { ...agent, memory: [...agent.memory] };
+  a.prevX = a.x; a.prevY = a.y;
+
+  const { grid, cols, rows, exit } = maze;
+
+  // ----- Check exit -----
+  const cellX = Math.floor(a.x), cellY = Math.floor(a.y);
+  const ex = exit[0], ey = exit[1];
+  if (cellX === ex && cellY === ey) {
+    a.x = ex + 0.5; a.y = ey + 0.5;
+    a.reached = true;
+    return a;
+  }
+
+  // ----- Memory: record position -----
+  a.memory.push([a.x, a.y]);
+  if (a.memory.length > a.memorySize) a.memory.shift();
+
+  // ----- Sight: cast rays in 4 cardinal directions -----
+  function wallDist(x, y, dx, dy) {
+    let d = 0;
+    let cx = Math.floor(x), cy = Math.floor(y);
+    while (d < a.sight + 2) {
+      cx += dx; cy += dy; d++;
+      if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return Infinity;
+      if (grid[cy][cx] === 1) return d;
+    }
+    return Infinity;
+  }
+
+  const distN = wallDist(a.x, a.y, 0, -1);
+  const distS = wallDist(a.x, a.y, 0, 1);
+  const distE = wallDist(a.x, a.y, 1, 0);
+  const distW = wallDist(a.x, a.y, -1, 0);
+
+  // ----- Direction-to-exit (if within sight) -----
+  const dxExit = exit[0] - a.x, dyExit = exit[1] - a.y;
+  const distExit = Math.hypot(dxExit, dyExit);
+  const knowsExit = distExit <= a.sight + 1;
+  const dirToExit = Math.atan2(dyExit, dxExit);
+
+  // ----- Right-hand-rule wall follower with upgrades -----
+  // Priority: 1) move toward exit if visible, 2) follow right wall, 3) avoid recent cells
+  let bestDir = a.dir;
+  let bestScore = -Infinity;
+
+  const candidates = [0, Math.PI/2, -Math.PI/2, Math.PI];  // forward, right, left, back
+  for (const turn of candidates) {
+    const d = a.dir + turn;
+    const fx = Math.round(Math.cos(d)), fy = Math.round(Math.sin(d));
+    const tx = Math.floor(a.x) + fx, ty = Math.floor(a.y) + fy;
+
+    let score = 0;
+    // Prefer directions not blocked by walls
+    if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) continue;
+    if (grid[ty][tx] === 1) { score -= 10; }
+    else { score += 2; }
+
+    // Prefer toward exit (if known)
+    if (knowsExit) {
+      const dot = Math.cos(d) * Math.cos(dirToExit) + Math.sin(d) * Math.sin(dirToExit);
+      score += dot * 3;
+    }
+
+    // Penalise recently visited cells
+    const targetKey = `${tx},${ty}`;
+    const visited = a.memory.some(([mx, my]) =>
+      Math.floor(mx) === tx && Math.floor(my) === ty);
+    if (visited) score -= 1.5;
+
+    // Bonus for forward (right-hand rule bias)
+    if (turn === 0) score += 0.5;
+
+    // Random noise (small, for tie-breaking)
+    score += (rng() - 0.5) * 0.2;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestDir = d;
+    }
+  }
+
+  // ----- Smooth turn toward best direction -----
+  let angleDiff = bestDir - a.dir;
+  while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+  while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+  const maxTurn = a.turnRate * 0.15;
+  a.dir += Math.max(-maxTurn, Math.min(maxTurn, angleDiff));
+
+  // ----- Move forward -----
+  const step = a.speed;
+  a.x += Math.cos(a.dir) * step;
+  a.y += Math.sin(a.dir) * step;
+
+  // ----- Collision: don't walk into walls -----
+  const cx = Math.floor(a.x), cy = Math.floor(a.y);
+  if (cx < 0 || cy < 0 || cx >= cols || cy >= rows || grid[cy][cx] === 1) {
+    a.x = a.prevX; a.y = a.prevY;
+  }
+
+  return a;
+}
+
+// ============================================================
+// QUESTION BANK — ~100 questions across 4 categories
+// ============================================================
+const QUESTION_BANK = [
+  // Math
+  { q: "What is 7 × 8?", opts: ["54", "56", "64", "48"], correct: 1, cat: "Math" },
+  { q: "What is 15% of 200?", opts: ["25", "30", "35", "40"], correct: 1, cat: "Math" },
+  { q: "√144 = ?", opts: ["10", "11", "12", "14"], correct: 2, cat: "Math" },
+  { q: "What is 2⁸?", opts: ["128", "256", "512", "64"], correct: 1, cat: "Math" },
+  { q: "What is 3³ + 4²?", opts: ["43", "31", "25", "37"], correct: 0, cat: "Math" },
+  { q: "If x + 7 = 15, x = ?", opts: ["6", "7", "8", "9"], correct: 2, cat: "Math" },
+  { q: "Area of circle with r=5? (π≈3.14)", opts: ["62.8", "78.5", "31.4", "15.7"], correct: 1, cat: "Math" },
+  { q: "LCM of 6 and 8?", opts: ["12", "24", "48", "16"], correct: 1, cat: "Math" },
+  { q: "What is 99 × 99?", opts: ["9701", "9801", "9901", "9999"], correct: 1, cat: "Math" },
+  { q: "What is the sum of angles in a triangle?", opts: ["90°", "180°", "270°", "360°"], correct: 1, cat: "Math" },
+  { q: "What is 2¹⁰?", opts: ["512", "1024", "2048", "256"], correct: 1, cat: "Math" },
+  { q: "Solve: 3x - 7 = 14", opts: ["5", "6", "7", "8"], correct: 2, cat: "Math" },
+  { q: "What is 1/3 + 1/4?", opts: ["2/7", "7/12", "1/7", "5/12"], correct: 1, cat: "Math" },
+  { q: "What is the square root of 169?", opts: ["11", "12", "13", "14"], correct: 2, cat: "Math" },
+  { q: "If a=3, b=4, what is a²+b²?", opts: ["25", "7", "12", "49"], correct: 0, cat: "Math" },
+  // History
+  { q: "In which year did WW2 end?", opts: ["1943", "1944", "1945", "1946"], correct: 2, cat: "History" },
+  { q: "Who was the first US President?", opts: ["Jefferson", "Adams", "Washington", "Lincoln"], correct: 2, cat: "History" },
+  { q: "The Berlin Wall fell in:", opts: ["1987", "1988", "1989", "1990"], correct: 2, cat: "History" },
+  { q: "Which empire built the Colosseum?", opts: ["Greek", "Roman", "Persian", "Ottoman"], correct: 1, cat: "History" },
+  { q: "Who discovered penicillin?", opts: ["Pasteur", "Fleming", "Koch", "Jenner"], correct: 1, cat: "History" },
+  { q: "The French Revolution began in:", opts: ["1776", "1789", "1799", "1804"], correct: 1, cat: "History" },
+  { q: "Who wrote 'The Art of War'?", opts: ["Confucius", "Sun Tzu", "Lao Tzu", "Mencius"], correct: 1, cat: "History" },
+  { q: "What ship sank in 1912?", opts: ["Lusitania", "Britannic", "Titanic", "Olympic"], correct: 2, cat: "History" },
+  { q: "First man on the moon (1969):", opts: ["Buzz Aldrin", "Neil Armstrong", "Yuri Gagarin", "John Glenn"], correct: 1, cat: "History" },
+  { q: "Which country gifted the Statue of Liberty?", opts: ["UK", "Spain", "France", "Italy"], correct: 2, cat: "History" },
+  { q: "The Magna Carta was signed in:", opts: ["1066", "1215", "1492", "1688"], correct: 1, cat: "History" },
+  // Geography
+  { q: "Capital of France?", opts: ["London", "Berlin", "Paris", "Madrid"], correct: 2, cat: "Geography" },
+  { q: "Largest continent by area?", opts: ["Africa", "Asia", "Europe", "N. America"], correct: 1, cat: "Geography" },
+  { q: "Which river is the longest in the world?", opts: ["Amazon", "Yangtze", "Nile", "Mississippi"], correct: 2, cat: "Geography" },
+  { q: "How many continents are there?", opts: ["5", "6", "7", "8"], correct: 2, cat: "Geography" },
+  { q: "Capital of Japan?", opts: ["Seoul", "Beijing", "Tokyo", "Bangkok"], correct: 2, cat: "Geography" },
+  { q: "Which country has the most people?", opts: ["USA", "India", "China", "Indonesia"], correct: 1, cat: "Geography" },
+  { q: "Mount Everest is in which range?", opts: ["Andes", "Alps", "Himalayas", "Rockies"], correct: 2, cat: "Geography" },
+  { q: "Which ocean is the largest?", opts: ["Atlantic", "Indian", "Arctic", "Pacific"], correct: 3, cat: "Geography" },
+  { q: "Capital of Australia?", opts: ["Sydney", "Melbourne", "Canberra", "Perth"], correct: 2, cat: "Geography" },
+  { q: "The Sahara is on which continent?", opts: ["Asia", "Africa", "Australia", "S. America"], correct: 1, cat: "Geography" },
+  // Science
+  { q: "H₂O is the formula for:", opts: ["Oxygen", "Hydrogen", "Water", "Helium"], correct: 2, cat: "Science" },
+  { q: "What planet is closest to the Sun?", opts: ["Venus", "Mercury", "Earth", "Mars"], correct: 1, cat: "Science" },
+  { q: "What gas do plants absorb?", opts: ["Oxygen", "Nitrogen", "CO₂", "Hydrogen"], correct: 2, cat: "Science" },
+  { q: "Speed of light ≈ ? km/s", opts: ["100,000", "200,000", "300,000", "400,000"], correct: 2, cat: "Science" },
+  { q: "How many bones in the adult human body?", opts: ["186", "206", "226", "256"], correct: 1, cat: "Science" },
+  { q: "DNA stands for:", opts: ["Deoxyribonucleic Acid", "Dinitrogen Acid", "Double Nucleic Acid", "Deoxyribose Nucleic"], correct: 0, cat: "Science" },
+  { q: "What is the powerhouse of the cell?", opts: ["Nucleus", "Ribosome", "Mitochondria", "Membrane"], correct: 2, cat: "Science" },
+  { q: "Atomic number of Carbon:", opts: ["4", "6", "8", "12"], correct: 1, cat: "Science" },
+  { q: "What force keeps us on the ground?", opts: ["Magnetism", "Friction", "Gravity", "Inertia"], correct: 2, cat: "Science" },
+  { q: "How many elements in the periodic table? (~)", opts: ["92", "108", "118", "136"], correct: 2, cat: "Science" },
+];
+
+function pickQuestions(n) {
+  const pool = [...QUESTION_BANK];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, n);
+}
+
+// ============================================================
+// CANVAS RENDERER
+// ============================================================
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvasWrap');
+  const r = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = r.width, h = r.height;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function render(maze, agent, runState) {
+  const { grid, cols, rows, exit } = maze;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const cellW = w / cols, cellH = h / rows;
+  ctx.clearRect(0, 0, w, h);
+
+  // Background
+  ctx.fillStyle = '#050810';
+  ctx.fillRect(0, 0, w, h);
+
+  // Walls
+  ctx.fillStyle = '#1c2138';
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (grid[y][x] === 1) {
+        ctx.fillRect(x * cellW + 1, y * cellH + 1, cellW - 2, cellH - 2);
+      }
+    }
+  }
+
+  // Exit
+  const [ex, ey] = exit;
+  ctx.fillStyle = '#5df2d6';
+  ctx.globalAlpha = 0.5 + Math.sin(performance.now() * 0.005) * 0.3;
+  ctx.fillRect(ex * cellW + 2, ey * cellH + 2, cellW - 4, cellH - 4);
+  ctx.globalAlpha = 1;
+
+  // Sight range (fog of war reveal)
+  const sightCells = agent.sight + 1;
+  const ax = agent.x, ay = agent.y;
+  for (let dy = -sightCells; dy <= sightCells; dy++) {
+    for (let dx = -sightCells; dx <= sightCells; dx++) {
+      const sx = Math.floor(ax) + dx, sy = Math.floor(ay) + dy;
+      if (sx < 0 || sy < 0 || sx >= cols || sy >= rows) continue;
+      if (Math.abs(dx) + Math.abs(dy) > sightCells + 1) continue;
+      // Fade non-revealed cells
+      ctx.fillStyle = 'rgba(5,8,16,0.6)';
+      ctx.fillRect(sx * cellW, sy * cellH, cellW, cellH);
+    }
+  }
+
+  // Memory trail
+  if (agent.memory.length > 1) {
+    ctx.strokeStyle = 'rgba(93,242,214,0.15)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < agent.memory.length; i++) {
+      const [mx, my] = agent.memory[i];
+      const px = mx * cellW, py = my * cellH;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // Agent (triangle)
+  const px = agent.x * cellW, py = agent.y * cellH;
+  const size = cellW * 0.4;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(agent.dir);
+  ctx.fillStyle = agent.reached ? '#ffb84d' : '#5df2d6';
+  ctx.beginPath();
+  ctx.moveTo(size, 0);
+  ctx.lineTo(-size * 0.6, -size * 0.5);
+  ctx.lineTo(-size * 0.6, size * 0.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // Sight range circle
+  ctx.strokeStyle = 'rgba(93,242,214,0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, 0, agent.sight * cellW, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Exit line (if visible)
+  if (agent.alive) {
+    ctx.strokeStyle = 'rgba(255,184,77,0.1)';
+    ctx.setLineDash([4, 8]);
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(ex * cellW + cellW / 2, ey * cellH + cellH / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// ============================================================
+// RUN LOOP — separate tick rate from render rate
+// ============================================================
+const TICK_RATE = 30;  // 30 ticks/second
+const TICK_MS = 1000 / TICK_RATE;
+
+let runState = {
+  status: 'idle',     // idle | running | paused | done
+  tickCount: 0,
+  speed: 1,
+  agent: null,
+  maze: null,
+  ticksThisFrame: 0,
+  particles: [],
+};
+
+function startRun(speed) {
+  if (runState.status === 'running') return;
+  runState.status = 'running';
+  runState.speed = speed || 1;
+  runState.tickCount = 0;
+  runState.agent.alive = true;
+  runState.agent.reached = false;
+  // Reset agent to start
+  const [sx, sy] = runState.maze.start;
+  runState.agent.x = sx + 0.5;
+  runState.agent.y = sy + 0.5;
+  runState.agent.memory = [];
+  runState.agent.dir = 0;
+  updateUI();
+}
+
+function spawnParticles(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 20 + Math.random() * 40;
+    p.style.cssText = `
+      left:${x}px; top:${y}px;
+      background:${i % 2 === 0 ? '#5df2d6' : '#ffb84d'};
+      --dx:${Math.cos(angle) * dist}px;
+      --dy:${Math.sin(angle) * dist}px;
+    `;
+    document.getElementById('canvasWrap').appendChild(p);
+    setTimeout(() => p.remove(), 700);
+  }
+}
+
+// ============================================================
+// GAME STATE
+// ============================================================
+let upgrades = { sight: 0, speed: 0, memory: 0, turn: 0 };
+let upgradePoints = 0;
+let currentQuiz = [];
+let quizIndex = 0;
+let quizScore = 0;
+let mazeSeed = Date.now();
+
+function newMaze() {
+  mazeSeed = Date.now();
+  runState.status = 'idle';
+  runState.tickCount = 0;
+  runState.maze = generateMaze(21, 21, mazeSeed);
+  runState.agent = createAgent(runState.maze, upgrades);
+  runState.particles = [];
+  document.getElementById('result').style.display = 'none';
+  resetQuiz();
+  updateUI();
+}
+
+function resetQuiz() {
+  quizIndex = 0;
+  quizScore = 0;
+  currentQuiz = pickQuestions(5);
+  renderQuiz();
+}
+
+function renderQuiz() {
+  const el = document.getElementById('quizContent');
+  if (quizIndex >= currentQuiz.length) {
+    el.innerHTML = '<div class="quiz-feedback" style="color:#5df2d6">Quiz complete! +' +
+      quizScore + ' upgrade points earned.</div>' +
+      '<button class="btn btn--sm" style="margin-top:8px" onclick="newQuiz()">New quiz</button>';
+    return;
+  }
+  const q = currentQuiz[quizIndex];
+  el.innerHTML = `
+    <div class="quiz-q">${q.q} <span style="font-size:10px;color:#5a608a">[${q.cat}]</span></div>
+    <div class="quiz-opts">
+      ${q.opts.map((o, i) => `
+        <button class="quiz-opt" data-idx="${i}">${String.fromCharCode(65 + i)}) ${o}</button>
+      `).join('')}
+    </div>
+    <div class="quiz-feedback" id="quizFeedback"></div>
+  `;
+  el.querySelectorAll('.quiz-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      const correct = idx === currentQuiz[quizIndex].correct;
+      const fb = document.getElementById('quizFeedback');
+
+      // Disable all options
+      el.querySelectorAll('.quiz-opt').forEach(b => {
+        b.disabled = true;
+        const i = parseInt(b.dataset.idx);
+        if (i === currentQuiz[quizIndex].correct) b.classList.add('correct');
+        else if (i === idx && !correct) b.classList.add('wrong');
+      });
+
+      if (correct) {
+        quizScore++;
+        upgradePoints++;
+        fb.textContent = 'Correct! +1 upgrade point';
+        fb.style.color = '#5df2d6';
+      } else {
+        fb.textContent = 'Incorrect. The right answer is highlighted.';
+        fb.style.color = '#ff4d9d';
+      }
+
+      setTimeout(() => {
+        quizIndex++;
+        renderQuiz();
+        updateUI();
+      }, 800);
+    });
+  });
+}
+
+function newQuiz() {
+  quizIndex = 0;
+  quizScore = 0;
+  currentQuiz = pickQuestions(5);
+  renderQuiz();
+}
+
+function spendPoint(stat) {
+  if (upgradePoints <= 0) return;
+  upgradePoints--;
+  upgrades[stat] = (upgrades[stat] || 0) + 1;
+  // Rebuild agent with new stats
+  runState.agent = createAgent(runState.maze, upgrades);
+  updateUI();
+}
+
+function updateUI() {
+  document.getElementById('hudState').textContent =
+    runState.status === 'running' ? 'RUNNING' :
+    runState.agent?.reached ? 'DONE!' : 'READY';
+  document.getElementById('hudTicks').textContent = runState.tickCount + ' ticks';
+  document.getElementById('pointsBadge').textContent = upgradePoints + ' pts';
+  document.getElementById('sightVal').textContent = 2 + upgrades.sight;
+  document.getElementById('speedVal').textContent = (1.0 + upgrades.speed * 0.33).toFixed(1) + '×';
+  document.getElementById('memVal').textContent = 16 + upgrades.memory * 4;
+  document.getElementById('turnVal').textContent = (1.0 + upgrades.turn * 0.5).toFixed(1) + '×';
+
+  // Disable upgrade buttons if no points
+  ['upSight', 'upSpeed', 'upMem', 'upTurn'].forEach(id => {
+    document.getElementById(id).disabled = upgradePoints <= 0;
+  });
+
+  // Run button state
+  const runBtn = document.getElementById('runBtn');
+  runBtn.disabled = runState.status === 'running';
+  runBtn.textContent = runState.agent?.reached ? '⟳ REPLAY' : '▶ RUN';
+}
+
+// ============================================================
+// EVENT HANDLERS
+// ============================================================
+document.getElementById('newMazeBtn').addEventListener('click', newMaze);
+document.getElementById('runBtn').addEventListener('click', () => startRun(1));
+document.getElementById('speed1').addEventListener('click', () => startRun(1));
+document.getElementById('speed2').addEventListener('click', () => startRun(2));
+document.getElementById('speed5').addEventListener('click', () => startRun(5));
+document.getElementById('shareBtn').addEventListener('click', () => {
+  const time = (runState.tickCount / TICK_RATE).toFixed(1);
+  const text = `🧠 My AI navigated a maze in ${time}s (seed: ${mazeSeed}) — Brainwork Royale Phase 1`;
+  navigator.clipboard.writeText(text).then(() => {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = 'Copied to clipboard!';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2000);
+  });
+});
+
+['upSight', 'upSpeed', 'upMem', 'upTurn'].forEach(id => {
+  const stat = id.replace('up', '').toLowerCase();
+  document.getElementById(id).addEventListener('click', () => spendPoint(stat));
+});
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+let lastTickTime = 0;
+let tickAccumulator = 0;
+
+function gameLoop(timestamp) {
+  requestAnimationFrame(gameLoop);
+
+  // Update ticks
+  if (runState.status === 'running') {
+    if (lastTickTime === 0) lastTickTime = timestamp;
+    const elapsed = timestamp - lastTickTime;
+    lastTickTime = timestamp;
+    tickAccumulator += elapsed * runState.speed;
+
+    const rng = createRNG(mazeSeed + runState.tickCount);
+    while (tickAccumulator >= TICK_MS) {
+      tickAccumulator -= TICK_MS;
+      runState.agent = tick(runState.maze, runState.agent, rng);
+      runState.tickCount++;
+
+      if (runState.agent.reached) {
+        runState.status = 'done';
+        const wrap = document.getElementById('canvasWrap');
+        const cellW = wrap.clientWidth / runState.maze.cols;
+        const cellH = wrap.clientHeight / runState.maze.rows;
+        spawnParticles(
+          runState.agent.x * cellW,
+          runState.agent.y * cellH,
+          20
+        );
+        document.getElementById('result').style.display = 'block';
+        document.getElementById('result').innerHTML =
+          `<div class="result__status">MAZE COMPLETE!</div>
+           <div class="result__time">${(runState.tickCount / TICK_RATE).toFixed(1)}s · ${runState.tickCount} ticks</div>`;
+        updateUI();
+        break;
+      }
+
+      // Timeout after 2000 ticks (~67 seconds at 1×)
+      if (runState.tickCount >= 2000) {
+        runState.status = 'done';
+        document.getElementById('result').style.display = 'block';
+        document.getElementById('result').innerHTML =
+          `<div class="result__status" style="color:#ff4d9d">GOT STUCK</div>
+           <div class="result__time">Timed out after ${(runState.tickCount / TICK_RATE).toFixed(0)}s.
+            <br/><span style="font-size:11px;color:#8b91b8">Try upgrading sight range or memory.</span></div>`;
+        updateUI();
+        break;
+      }
+
+      updateUI();
+    }
+  } else {
+    lastTickTime = 0;
+    tickAccumulator = 0;
+  }
+
+  // Always render
+  if (runState.maze && runState.agent) {
+    render(runState.maze, runState.agent, runState);
+  }
+}
+
+// ============================================================
+// INIT
+// ============================================================
+newMaze();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
