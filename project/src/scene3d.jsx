@@ -1499,14 +1499,17 @@ function mountRagdollScene(container) {
         actions[clip.name] = mixer.clipAction(clip);
       });
     } else {
-      // Fallback capsule
-      model = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.18, 1.0, 6, 12),
-        new THREE.MeshStandardMaterial({ color: 0x9bf0e0, roughness: 0.6 })
-      );
-      model.position.y = 0.7;
-      model.castShadow = true;
+      // Fallback capsule — visible placeholder when PEP-Smol hasn't loaded
+      const fallbackGeo = new THREE.CapsuleGeometry(0.22, 1.5, 8, 16);
+      const fallbackMat = new THREE.MeshStandardMaterial({
+        color: 0x5df2d6, roughness: 0.5, metalness: 0.1,
+        emissive: 0x2a8a7a, emissiveIntensity: 0.5,
+      });
+      model = new THREE.Mesh(fallbackGeo, fallbackMat);
+      model.position.set(0, 1.2, 0);
+      model.castShadow = true; model.receiveShadow = true;
       scene.add(model);
+      console.warn("[scene3d] Using fallback capsule — PEP-Smol model not loaded yet");
     }
 
     return {
@@ -1536,7 +1539,7 @@ function mountRagdollScene(container) {
   const debugCapsuleGeo = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
   for (let i = 0; i < POPULATION; i++) {
     const skel = new THREE.Group();
-    skel.visible = false;  // hidden for debug — verify model visibility first
+    skel.visible = true;  // faint overlay over the model
 
     const bodyDefs = [
       // Lower body (brain-driven)
