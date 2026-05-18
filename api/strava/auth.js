@@ -6,7 +6,7 @@
    GET /api/strava/auth
    ============================================================ */
 
-import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
 // Lazy-init Firebase Admin (reuses across warm invocations)
@@ -71,7 +71,3 @@ export default async function handler(req) {
     return new Response(`Auth failed: ${e.message}`, { status: 500 });
   }
 }
-
-export const config = {
-  runtime: "nodejs20.x",
-};

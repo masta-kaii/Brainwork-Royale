@@ -118,7 +118,3 @@ p{color:#8b91b8;font-size:13px;margin:0 0 20px}
     return new Response(`Callback error: ${e.message}`, { status: 500 });
   }
 }
-
-export const config = {
-  runtime: "nodejs20.x",
-};

@@ -147,7 +147,3 @@ export default async function handler(req) {
     });
   }
 }
-
-export const config = {
-  runtime: "nodejs20.x",
-};

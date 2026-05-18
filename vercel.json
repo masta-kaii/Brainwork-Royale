@@ -1,15 +1,12 @@
 {
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/api/og", "destination": "/project/api/og" },
-    { "source": "/api/strava/auth", "destination": "/project/api/strava/auth" },
-    { "source": "/api/strava/callback", "destination": "/project/api/strava/callback" },
-    { "source": "/api/strava/sync", "destination": "/project/api/strava/sync" },
     { "source": "/((?!project/|api/).*)", "destination": "/project/$1" }
   ],
   "functions": {
-    "project/api/og.js": { "runtime": "nodejs20.x", "maxDuration": 10 },
-    "project/api/strava/auth.js": { "runtime": "nodejs20.x", "maxDuration": 8 },
-    "project/api/strava/callback.js": { "runtime": "nodejs20.x", "maxDuration": 8 }
+    "api/og.js": { "runtime": "nodejs20.x", "maxDuration": 10 },
+    "api/strava/auth.js": { "runtime": "nodejs20.x", "maxDuration": 8 },
+    "api/strava/callback.js": { "runtime": "nodejs20.x", "maxDuration": 8 },
+    "api/strava/sync.js": { "runtime": "nodejs20.x", "maxDuration": 15 }
   }
 }
