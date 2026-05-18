@@ -217,7 +217,7 @@ function generateMaze(cols,rows,seed){
 const BRAIN_ARCH={inputs:8,hidden:8,outputs:4};
 function makeBrain(){const a=BRAIN_ARCH;return{arch:{...a,activation:'tanh'},w1:Array.from({length:a.hidden},()=>Array.from({length:a.inputs},()=>Math.random()*2-1)),b1:Array.from({length:a.hidden},()=>Math.random()*.2-.1),w2:Array.from({length:a.outputs},()=>Array.from({length:a.hidden},()=>Math.random()*2-1)),b2:Array.from({length:a.outputs},()=>Math.random()*.2-.1)}}
 function cloneBrain(b){return{arch:{...b.arch},w1:b.w1.map(r=>r.slice()),b1:b.b1.slice(),w2:b.w2.map(r=>r.slice()),b2:b.b2.slice()}}
-function forward(b,x){const{h,o}=b.arch;const hh=new Array(h);for(let i=0;i<h;i++){let s=b.b1[i];const r=b.w1[i];for(let j=0;j<b.arch.inputs;j++)s+=r[j]*x[j];hh[i]=Math.tanh(s)}const y=new Array(o);for(let i=0;i<o;i++){let s=b.b2[i];const r=b.w2[i];for(let j=0;j<h;j++)s+=r[j]*hh[j];y[i]=Math.tanh(s)}return y}
+function forward(b,x){const{hidden:h,outputs:o}=b.arch;const hh=new Array(h);for(let i=0;i<h;i++){let s=b.b1[i];const r=b.w1[i];for(let j=0;j<b.arch.inputs;j++)s+=r[j]*x[j];hh[i]=Math.tanh(s)}const y=new Array(o);for(let i=0;i<o;i++){let s=b.b2[i];const r=b.w2[i];for(let j=0;j<h;j++)s+=r[j]*hh[j];y[i]=Math.tanh(s)}return y}
 function mutate(b,r,sigma){if(!r)r=.08;if(!sigma)sigma=.3;const c=cloneBrain(b);const m=v=>(Math.random()<r?v+(Math.random()*2-1)*sigma:v);c.w1=c.w1.map(r=>r.map(m));c.b1=c.b1.map(m);c.w2=c.w2.map(r=>r.map(m));c.b2=c.b2.map(m);return c}
 function brainToJSON(b,meta){return{schema:'br3',arch:b.arch,weights:{w1:b.w1,b1:b.b1,w2:b.w2,b2:b.b2},meta:{...meta,ts:Date.now()}}}
 function brainFromJSON(j){return{arch:j.arch,w1:j.weights.w1,b1:j.weights.b1,w2:j.weights.w2,b2:j.weights.b2}}
