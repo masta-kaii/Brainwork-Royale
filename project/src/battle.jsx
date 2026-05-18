@@ -51,23 +51,26 @@ function BattleScreen({ ai, seed, mode = "battle", onReseed, onToast, onMatchCom
   React.useEffect(() => {
     if (!stageRef.current) return;
 
-    // sim — pass bot brains so opposing agents also get speed boosts
-    let sim;
+    // sim — all agents get fresh random maze brains (no pre-trained data)
+    // The ragdoll learns from zero. Battle is the test.
     if (isDaily) {
-      // Daily maze: deterministic from date, ghost opponents from Firestore or local
       const dailyKey = window.dailyMazeSeed?.() || String(new Date().getFullYear() * 10000 + (new Date().getMonth() + 1) * 100 + new Date().getDate());
-      const ghostRuns = (ai._ghostRuns || []).map(r => r.brainWeights || r.brain);
+      const ghostRuns = (ai._ghostRuns || []).map(r => r.mazeBrainWeights || r.brainWeights);
       sim = createDailySim(ai, ghostRuns);
     } else {
-      const BOT_BRAIN_COUNT = 7;
-      const botBrains = Array.from({ length: BOT_BRAIN_COUNT }, () =>
-        window.brainEngine?.makeBrain?.(window.brainEngine?.DEFAULT_ARCH) || null
+      const BOT_COUNT = 7;
+      // Give all bots fresh random maze brains — no pre-trained advantage
+      const botBrains = Array.from({ length: BOT_COUNT }, () =>
+        window.makeMazeBrain?.() || null
       );
+      const mazeBrain = ai.mazeBrain
+        ? (typeof window.mazeBrainFromJSON === 'function' ? window.mazeBrainFromJSON(ai.mazeBrain) : null)
+        : (typeof window.makeMazeBrain === 'function' ? window.makeMazeBrain() : null);
+      const youWithMazeBrain = { ...ai, mazeBrain, brain: ai.brain || null };
       sim = isRace
-        ? createRaceSim(seed, ai, { botBrains })
-        : createBattleSim(seed, ai, { botBrains });
+        ? createRaceSim(seed, youWithMazeBrain, { botBrains })
+        : createBattleSim(seed, youWithMazeBrain, { botBrains });
     }
-    simRef.current = sim;
     completedRef.current = false;
 
     // rolling replay

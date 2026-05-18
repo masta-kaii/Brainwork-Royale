@@ -22,41 +22,59 @@ const ALL_QUESTS = [
   { id: "r4", kind: "mind", kindLabel: "Health API · Sleep", glyph: "☾", title: "Sleep 8 hours", desc: "Pulled from Apple Health. Full stamina at next match start.", progress: 7.1, target: 8, unit: "hr", reward: 1, rewardLabel: "recovery", refresh: "Nightly", cat: "real" },
 ];
 
-// Sample quiz bank
+// Expanded quiz bank — shuffled per session, no repeats within a session
 const QUIZ_BANK = [
-  {
-    subject: "Linear algebra",
-    q: "What is the determinant of [[2, 3], [1, 4]]?",
-    options: ["5", "8", "11", "−5"],
-    correct: 0, // 2*4 - 3*1 = 5
-  },
-  {
-    subject: "Linear algebra",
-    q: "The rank of an n×n invertible matrix is:",
-    options: ["0", "1", "n−1", "n"],
-    correct: 3,
-  },
-  {
-    subject: "Linear algebra",
-    q: "If A is 3×4 and B is 4×2, the product AB is:",
-    options: ["3×2", "4×4", "Undefined", "2×3"],
-    correct: 0,
-  },
-  {
-    subject: "Linear algebra",
-    q: "Eigenvalues of [[3, 0], [0, 5]]:",
-    options: ["3 and 5", "0 and 8", "15 only", "−3 and −5"],
-    correct: 0,
-  },
+  { subject: "Math", q: "What is 7 × 8?", options: ["54", "56", "64", "48"], correct: 1 },
+  { subject: "Math", q: "What is 15% of 200?", options: ["25", "30", "35", "40"], correct: 1 },
+  { subject: "Math", q: "√144 = ?", options: ["10", "11", "12", "14"], correct: 2 },
+  { subject: "Math", q: "What is 2⁸?", options: ["128", "256", "512", "64"], correct: 1 },
+  { subject: "Math", q: "What is 3³ + 4²?", options: ["43", "31", "25", "37"], correct: 0 },
+  { subject: "Math", q: "If x + 7 = 15, x = ?", options: ["6", "7", "8", "9"], correct: 2 },
+  { subject: "Math", q: "Area of circle with r=5? π≈3.14", options: ["62.8", "78.5", "31.4", "15.7"], correct: 1 },
+  { subject: "Math", q: "LCM of 6 and 8?", options: ["12", "24", "48", "16"], correct: 1 },
+  { subject: "Math", q: "Sum of angles in a triangle?", options: ["90°", "180°", "270°", "360°"], correct: 1 },
+  { subject: "Math", q: "Solve: 3x - 7 = 14", options: ["5", "6", "7", "8"], correct: 2 },
+  { subject: "Math", q: "Square root of 169?", options: ["11", "12", "13", "14"], correct: 2 },
+  { subject: "Math", q: "If a=3, b=4, a²+b²=?", options: ["25", "7", "12", "49"], correct: 0 },
+  { subject: "History", q: "WW2 ended in?", options: ["1943", "1944", "1945", "1946"], correct: 2 },
+  { subject: "History", q: "First US President?", options: ["Jefferson", "Adams", "Washington", "Lincoln"], correct: 2 },
+  { subject: "History", q: "Berlin Wall fell in?", options: ["1987", "1988", "1989", "1990"], correct: 2 },
+  { subject: "History", q: "Colosseum built by?", options: ["Greek", "Roman", "Persian", "Ottoman"], correct: 1 },
+  { subject: "History", q: "Who discovered penicillin?", options: ["Pasteur", "Fleming", "Koch", "Jenner"], correct: 1 },
+  { subject: "History", q: "French Revolution began?", options: ["1776", "1789", "1799", "1804"], correct: 1 },
+  { subject: "History", q: "Who wrote 'The Art of War'?", options: ["Confucius", "Sun Tzu", "Lao Tzu", "Mencius"], correct: 1 },
+  { subject: "Geography", q: "Capital of France?", options: ["London", "Berlin", "Paris", "Madrid"], correct: 2 },
+  { subject: "Geography", q: "Largest continent?", options: ["Africa", "Asia", "Europe", "N.America"], correct: 1 },
+  { subject: "Geography", q: "Longest river?", options: ["Amazon", "Yangtze", "Nile", "Mississippi"], correct: 2 },
+  { subject: "Geography", q: "Capital of Japan?", options: ["Seoul", "Beijing", "Tokyo", "Bangkok"], correct: 2 },
+  { subject: "Geography", q: "Most populous country?", options: ["USA", "India", "China", "Indonesia"], correct: 1 },
+  { subject: "Science", q: "H₂O is?", options: ["Oxygen", "Hydrogen", "Water", "Helium"], correct: 2 },
+  { subject: "Science", q: "Closest planet to Sun?", options: ["Venus", "Mercury", "Earth", "Mars"], correct: 1 },
+  { subject: "Science", q: "Gas plants absorb?", options: ["Oxygen", "Nitrogen", "CO₂", "Hydrogen"], correct: 2 },
+  { subject: "Science", q: "Speed of light ≈ ?", options: ["100k km/s", "200k km/s", "300k km/s", "400k km/s"], correct: 2 },
+  { subject: "Science", q: "Bones in adult human?", options: ["186", "206", "226", "256"], correct: 1 },
+  { subject: "Science", q: "Cell powerhouse?", options: ["Nucleus", "Ribosome", "Mitochondria", "Membrane"], correct: 2 },
+  { subject: "Science", q: "Atomic number of Carbon?", options: ["4", "6", "8", "12"], correct: 1 },
 ];
+
+function shuffleArray(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
 
 function QuizModal({ quest, onClose, onReward }) {
   const [step, setStep] = React.useState(0);
   const [answer, setAnswer] = React.useState(null);
   const [correctCount, setCorrectCount] = React.useState(0);
+  const questionsRef = React.useRef(null);
 
-  const TOTAL = 3;
-  const q = QUIZ_BANK[step % QUIZ_BANK.length];
+  if (!questionsRef.current) {
+    questionsRef.current = shuffleArray(QUIZ_BANK).slice(0, 5);
+  }
+
+  const TOTAL = questionsRef.current.length;
+  const q = questionsRef.current[step];
 
   const pick = (i) => {
     if (answer != null) return;
@@ -64,13 +82,14 @@ function QuizModal({ quest, onClose, onReward }) {
     if (i === q.correct) setCorrectCount((c) => c + 1);
     setTimeout(() => {
       if (step + 1 >= TOTAL) {
-        onReward({ ...quest, correct: i === q.correct ? correctCount + 1 : correctCount, total: TOTAL });
+        const score = correctCount + (i === q.correct ? 1 : 0);
+        onReward({ ...quest, correct: score, total: TOTAL });
         onClose();
       } else {
         setStep((s) => s + 1);
         setAnswer(null);
       }
-    }, 1000);
+    }, 800);
   };
 
   return (

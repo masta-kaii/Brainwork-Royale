@@ -327,10 +327,10 @@ function createBattleSim(seed, you, opts) {
     // mazeBrain (if present) enables brain-driven navigation instead of BFS.
     const agentBrain = i === 0
       ? (you.brain || null)
-      : (botBrains[(i - 1) % botBrains.length] || null);
+      : null;  // bots don't need locomotion brains for speed boost
     const agentMazeBrain = i === 0
       ? (you.mazeBrain || null)
-      : null;  // bots use BFS for now
+      : (botBrains[(i - 1) % botBrains.length] || null);  // bots use random maze brains
 
     agents.push({
       id: i,

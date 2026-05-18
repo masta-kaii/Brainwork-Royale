@@ -260,24 +260,32 @@ function App({ user, initialState }) {
   };
 
   const completeQuest = (q) => {
+    // Already completed or claimed
+    if (q.rewardClaimed || q.status === "completed") {
+      showToast(`${q.title} already completed today`);
+      return;
+    }
     if (q.kind === "quiz") {
       setTab("quests");
       window.dispatchEvent(new CustomEvent("open-quiz", { detail: q }));
       return;
     }
-    const newProgress = Math.min(q.target, q.progress + Math.ceil(q.target * 0.25));
+    // Non-quiz quests: one-click complete
+    const newProgress = q.target;
     setQuests((qs) =>
-      qs.map((qq) => (qq.id === q.id ? { ...qq, progress: newProgress } : qq))
+      qs.map((qq) => (qq.id === q.id ? { ...qq, progress: newProgress, status: "completed" } : qq))
     );
     window.dataLayer?.updateQuestProgress(uid, q.id, newProgress, q.target);
 
-    // Coins quests pay out in coins on each tick — credit the user
+    // Grant maze training tokens
+    setMazeTokens(t => t + 2);
+
     if (q.rewardLabel === "coins") {
       const newCoins = profile.currency.coins + q.reward;
       setProfile((p) => ({ ...p, currency: { ...p.currency, coins: newCoins } }));
       window.dataLayer?.saveCurrency(uid, { coins: newCoins });
     }
-    showToast(`+${q.reward} ${q.rewardLabel} earned`);
+    showToast(`✓ ${q.title} · +${q.reward} ${q.rewardLabel} · +2 brain tokens`);
   };
 
   const onQuestRewarded = (q) => {
@@ -380,20 +388,6 @@ function App({ user, initialState }) {
               )}
             </div>
           ))}
-
-          <div className="rail__nav-label">Dev</div>
-          <a className="rail-item" href="phase4.html" style={{ textDecoration: "none" }}>
-            <span className="rail-item__dot" style={{ background: "var(--amber)" }} />Phase Hub
-          </a>
-          <a className="rail-item" href="phase1.html" style={{ textDecoration: "none" }}>
-            <span className="rail-item__dot" />P1 · Dumb Playable
-          </a>
-          <a className="rail-item" href="phase2.html" style={{ textDecoration: "none" }}>
-            <span className="rail-item__dot" />P2 · Neural Evolution
-          </a>
-          <a className="rail-item" href="phase3.html" style={{ textDecoration: "none" }}>
-            <span className="rail-item__dot" />P3 · Ghost Races
-          </a>
 
           <div className="rail__nav-label">Meta</div>
           <div className="rail-item" onClick={() => setClassModal(true)}>
