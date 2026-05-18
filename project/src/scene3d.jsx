@@ -1661,7 +1661,7 @@ function mountRagdollScene(container) {
       if (!_smoothTargets[b._id]) _smoothTargets[b._id] = { lHip: 0, rHip: 0, lKnee: 0, rKnee: 0 };
       const tgt = _smoothTargets[b._id];
       // Damp toward target angles for smooth bone movement
-      const DAMP = 0.5;  // faster bone response to physics
+      const DAMP = 0.6;  // snap to target angle quickly
       tgt.lHip = tgt.lHip + (b.pendingJoints.lHip - tgt.lHip) * DAMP;
       tgt.rHip = tgt.rHip + (b.pendingJoints.rHip - tgt.rHip) * DAMP;
       tgt.lKnee = tgt.lKnee + (b.pendingJoints.lKnee - tgt.lKnee) * DAMP;

@@ -117,11 +117,11 @@ function isReady() { return !!window.RAPIER && !window.RAPIER_FAILED; }
 
 function _capsuleBody(world, x, y, z, halfHeight, radius, density = 1.0) {
   const RAPIER = window.RAPIER;
-  // Higher damping so the ragdoll settles quickly instead of swinging forever
+  // Balanced damping: settles quickly but allows visible joint movement
   const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
-    .setLinearDamping(0.8)
-    .setAngularDamping(2.5);
+    .setLinearDamping(0.6)
+    .setAngularDamping(0.8);
   const body = world.createRigidBody(bodyDesc);
   const colDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius)
     .setDensity(density)

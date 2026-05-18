@@ -64,7 +64,7 @@ function _observeRagdoll(rag) {
 // Reduced from 4.5 — bigger torques caused the bear to flail every tick.
 // With higher damping in createRagdoll, smaller torques still produce
 // visible motion but feel less reckless.
-const TORQUE_SCALE = 2.2;
+const TORQUE_SCALE = 3.5;
 function _applyTorques(rag, out) {
   const apply = (body, t) => {
     const T = t * TORQUE_SCALE;
