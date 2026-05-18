@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Training Test — PEP-Smol Viewer</title>
+<style>
+body{margin:0;background:#111;overflow:hidden}
+canvas{display:block;width:100vw;height:100vh}
+#info{position:fixed;top:10px;left:10px;color:#5df2d6;font:11px monospace;background:rgba(0,0,0,0.7);padding:8px 12px;border-radius:6px;z-index:10}
+</style>
+</head>
+<body>
+<div id="info">LOADING…</div>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const info = document.getElementById('info');
+
+// Scene
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x333333);
+
+// Camera
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 50);
+camera.position.set(0, 2, 6);
+camera.lookAt(0, 1, 0);
+
+// Renderer
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// Controls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+sun.position.set(4, 8, 3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+scene.add(sun);
+
+// Floor
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(20, 20),
+  new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.9 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.1;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Grid
+scene.add(new THREE.GridHelper(10, 10, 0x888888, 0xaaaaaa));
+
+// Red sphere — proves rendering works
+const sphere = new THREE.Mesh(
+  new THREE.SphereGeometry(0.3, 16, 12),
+  new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x440000, roughness: 0.3 })
+);
+sphere.position.set(2, 0.5, 0);
+sphere.castShadow = true;
+scene.add(sphere);
+
+// Load PEP-Smol
+info.textContent = 'LOADING PEP-SMOL…';
+const loader = new GLTFLoader();
+loader.load(
+  'assets/pep-smol-draco.glb',
+  (gltf) => {
+    info.textContent = 'PEP-SMOL LOADED ✓';
+    const model = gltf.scene;
+    
+    // Scale to ~2.2m
+    const box = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const scale = 2.2 / Math.max(size.y, 0.1);
+    model.scale.setScalar(scale);
+    
+    // Position on floor
+    model.position.set(0, -box.min.y * scale, 0);
+    model.castShadow = true;
+    model.receiveShadow = true;
+    
+    model.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        if (o.material) {
+          o.material.transparent = false;
+          o.material.opacity = 1;
+          o.material.depthWrite = true;
+        }
+      }
+    });
+    
+    scene.add(model);
+    info.textContent = 'PEP-SMOL · ' + gltf.animations.length + ' anims · scale=' + scale.toFixed(3);
+    
+    // Play idle
+    if (gltf.animations.length) {
+      const mixer = new THREE.AnimationMixer(model);
+      const idle = gltf.animations.find(c => /idle 01/i.test(c.name)) || gltf.animations[0];
+      const action = mixer.clipAction(idle);
+      action.play();
+      
+      const clock = new THREE.Clock();
+      const origLoop = loop;
+      loop = () => {
+        mixer.update(clock.getDelta());
+        origLoop();
+      };
+    }
+  },
+  (xhr) => {
+    if (xhr.total) {
+      const pct = Math.round(xhr.loaded / xhr.total * 100);
+      info.textContent = 'LOADING: ' + pct + '%';
+    }
+  },
+  (err) => {
+    info.textContent = 'FAILED: ' + (err?.message || err?.statusText || 'unknown');
+    console.error('Load error:', err);
+    
+    // Try uncompressed fallback
+    info.textContent = 'DRACO FAILED · TRYING UNCOMPRESSED…';
+    const loader2 = new GLTFLoader();
+    loader2.load(
+      'assets/pep-smol.gltf',
+      (gltf2) => {
+        info.textContent = 'UNCOMPRESSED LOADED ✓ (fallback)';
+        // ... same setup as above
+        const model = gltf2.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3(); box.getSize(size);
+        const scale = 2.2 / Math.max(size.y, 0.1);
+        model.scale.setScalar(scale);
+        model.position.set(0, -box.min.y * scale, 0);
+        model.traverse((o) => {
+          if (o.isMesh) {
+            o.castShadow = true; o.receiveShadow = true;
+            if (o.material) { o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; }
+          }
+        });
+        scene.add(model);
+        info.textContent = 'PEP-SMOL (uncompressed) · ' + gltf2.animations.length + ' anims';
+      },
+      (xhr2) => { if (xhr2.total) info.textContent = 'FALLBACK: ' + Math.round(xhr2.loaded/xhr2.total*100) + '%'; },
+      (err2) => { info.textContent = 'BOTH FAILED: ' + (err2?.message || 'unknown'); }
+    );
+  }
+);
+
+// Render loop
+function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(loop);
+
+// Resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
