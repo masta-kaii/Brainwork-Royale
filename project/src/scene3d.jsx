@@ -1475,8 +1475,9 @@ function mountRagdollScene(container) {
 
       if (!gltf || !gltf.scene) return;
 
-      // Build the bear
+      // Build the bear with bone tracking
       const model = gltf.scene;
+      const legBones = {};
       const box = new THREE.Box3().setFromObject(model);
       const size = new THREE.Vector3(); box.getSize(size);
       const targetH = 2.27;
@@ -1488,6 +1489,10 @@ function mountRagdollScene(container) {
           o.castShadow = true; o.receiveShadow = true;
           if (o.material) { o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; }
         }
+        if (o.name === "Left_Thigh-Local")  legBones.lHip  = { bone: o, restQuat: o.quaternion.clone() };
+        if (o.name === "Right_Thigh-Local") legBones.rHip  = { bone: o, restQuat: o.quaternion.clone() };
+        if (o.name === "Left_Leg-Local")    legBones.lShin = { bone: o, restQuat: o.quaternion.clone() };
+        if (o.name === "Right_Leg-Local")   legBones.rShin = { bone: o, restQuat: o.quaternion.clone() };
       });
       model.position.set(offsetX, groundOffset, -1);
       model.castShadow = true; model.receiveShadow = true;
@@ -1497,7 +1502,7 @@ function mountRagdollScene(container) {
       if (oldBear && oldBear.model) scene.remove(oldBear.model);
 
       // Create new bear entry
-      const bear = { _id: offsetX, model, mixer: null, actions: {}, legBones: {}, currentAnim: null, currentAction: null, pendingJoints: null, groundOffset, cx: 0, cz: 0, offsetX };
+      const bear = { _id: offsetX, model, mixer: null, actions: {}, legBones, currentAnim: null, currentAction: null, pendingJoints: null, groundOffset, cx: 0, cz: 0, offsetX };
       if (gltf.animations && gltf.animations.length) {
         bear.mixer = new THREE.AnimationMixer(model);
         gltf.animations.forEach((clip) => { bear.actions[clip.name] = bear.mixer.clipAction(clip); });
