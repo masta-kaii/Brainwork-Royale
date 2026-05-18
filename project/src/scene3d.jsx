@@ -1505,16 +1505,6 @@ function mountRagdollScene(container) {
     model.castShadow = true;
     model.receiveShadow = true;
     scene.add(model);
-    console.log("[scene3d] Bear created. PEP=" + !!baseModel + " pos=(" + model.position.x.toFixed(1) + "," + model.position.y.toFixed(1) + "," + model.position.z.toFixed(1) + ") groundOffset=" + groundOffset.toFixed(2));
-
-    // DEBUG: Bright red sphere — impossible to miss, confirms scene renders
-    const dbgSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.3, 16, 12),
-      new THREE.MeshBasicMaterial({ color: 0xff0000 })
-    );
-    dbgSphere.position.set(offsetX, 1.5, -1);
-    dbgSphere.name = "DEBUG_SPHERE";
-    scene.add(dbgSphere);
 
     return { _id: offsetX, model, mixer, actions, legBones, currentAnim: null, currentAction: null, pendingJoints: null, groundOffset, cx, cz, offsetX };
   }
