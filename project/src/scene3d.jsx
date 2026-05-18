@@ -1442,13 +1442,13 @@ function mountRagdollScene(container) {
     const legBones = {};
     let model = null, mixer = null;
     const actions = {};
-    let groundOffset = 1.0, cx = 0, cz = 0;  // default ground offset for fallback
+    let groundOffset = 1.0, cx = 0, cz = 0;
 
-    // Always start with a simple visible bear — the real model replaces it when ready
-    const useRealModel = !!(window.PEP_BASE && !window.PEP_FAILED);
+    // Build PEP-Smol model — clone from preloaded base or load directly
+    const baseModel = window.PEP_BASE && !window.PEP_FAILED ? window.PEP_BASE : null;
 
-    if (useRealModel) {
-      const tmp = window.PEP_BASE.scene.clone(true);
+    if (baseModel) {
+      const tmp = baseModel.scene.clone(true);
       const box = new THREE.Box3().setFromObject(tmp);
       const size = new THREE.Vector3(); box.getSize(size);
       const targetH = 2.27;
@@ -1457,7 +1457,7 @@ function mountRagdollScene(container) {
       cx = (box.min.x + box.max.x) / 2 * scale;
       cz = (box.min.z + box.max.z) / 2 * scale;
 
-      model = window.PEP_BASE.scene.clone(true);
+      model = baseModel.scene.clone(true);
       model.scale.setScalar(scale);
       model.traverse((o) => {
         if (o.isMesh) {
@@ -1473,7 +1473,6 @@ function mountRagdollScene(container) {
         if (o.name === "Right_Leg-Local")   legBones.rShin = { bone: o, restQuat: o.quaternion.clone() };
       });
 
-      // Extract bone positions
       model.updateWorldMatrix(true, false);
       const bonePositions = {};
       model.traverse((o) => {
@@ -1485,26 +1484,19 @@ function mountRagdollScene(container) {
       window._pepBonePositions = bonePositions;
 
       mixer = new THREE.AnimationMixer(model);
-      window.PEP_BASE.animations.forEach((clip) => {
+      baseModel.animations.forEach((clip) => {
         actions[clip.name] = mixer.clipAction(clip);
       });
-    } else {
-      // Simple visible bear — capsules + spheres, always renders
-      const g = new THREE.Group();
-      const bm = new THREE.MeshStandardMaterial({ color: 0x8B5A3C, roughness: 0.4 });
-      const dm = new THREE.MeshStandardMaterial({ color: 0x3a1f0a, roughness: 0.4 });
-      g.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.5, 8, 12), bm)); // torso
-      const h = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), bm); h.position.y = 0.7; g.add(h);
-      const el = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), dm); el.position.set(-0.12, 0.84, 0); g.add(el);
-      const er = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), dm); er.position.set(0.12, 0.84, 0); g.add(er);
-      g.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.25, 6, 8), bm)).position.set(-0.26, 0.05, 0);
-      g.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.25, 6, 8), bm)).position.set(0.26, 0.05, 0);
-      g.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.2, 6, 8), dm)).position.set(-0.1, -0.5, 0);
-      g.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.2, 6, 8), dm)).position.set(0.1, -0.5, 0);
-      model = g;
     }
 
-    // Position at room center
+    // If model is null (PEP-Smol not loaded), create a simple placeholder
+    if (!model) {
+      model = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.22, 0.8, 8, 16),
+        new THREE.MeshStandardMaterial({ color: 0x5df2d6, roughness: 0.4, emissive: 0x1a4a3a, emissiveIntensity: 0.6 })
+      );
+    }
+
     model.position.set(offsetX, groundOffset, -1);
     model.castShadow = true;
     model.receiveShadow = true;
