@@ -1282,14 +1282,15 @@ function mountRagdollScene(container) {
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.minDistance = 2.0;
-    controls.maxDistance = 8.0;
+    controls.maxDistance = 16.0;
     controls.maxPolarAngle = Math.PI * 0.49;
     controls.minPolarAngle = Math.PI * 0.10;
-    controls.enablePan = false;
-    controls.target.set(0, 0.9, 0);
+    controls.enablePan = true;
+    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+    controls.target.set(0, 1.0, 0);
   }
-  camera.position.set(3.5, 2.0, 5.0);
-  camera.lookAt(0, 1.0, 0);
+  camera.position.set(5.0, 3.0, 7.0);
+  camera.lookAt(0, 1.5, 0);
 
   scene.add(new THREE.AmbientLight(0x3a4060, 0.55));
   const sun = new THREE.DirectionalLight(0xfff2dc, 1.05);
@@ -1304,60 +1305,39 @@ function mountRagdollScene(container) {
   scene.add(accent);
 
   // ============================================================
-  // TRAINING ROOM — solid floor + 4 walls matching physics world.
-  // The physics room is 6×6m with 3m walls. These are the visual meshes.
+  // TRAINING ROOM — large white space. Pan: middle-mouse drag.
   // ============================================================
-  const ROOM_W = 6, ROOM_D = 6, ROOM_H = 3;
+  const ROOM_W = 10, ROOM_D = 10, ROOM_H = 4;
   const WALL_THICK = 0.3;
+  const wallDimW = ROOM_W * 2, wallDimD = ROOM_D * 2;
 
-  // Solid floor
-  const floorGeo = new THREE.PlaneGeometry(ROOM_W * 2 + WALL_THICK * 2, ROOM_D * 2 + WALL_THICK * 2);
-  const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1f3a, roughness: 0.8, metalness: 0.1, emissive: 0x080c18, emissiveIntensity: 0.3 });
+  // White floor
+  const floorGeo = new THREE.PlaneGeometry(wallDimW, wallDimD);
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.9, metalness: 0, emissive: 0x222222, emissiveIntensity: 0.08 });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.15;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  // Floor grid overlay
-  const gridHelper = new THREE.PolarGridHelper(ROOM_W, 32, 20, 64, 0x2a3055, 0x1b2040);
-  gridHelper.position.y = -0.14;
-  scene.add(gridHelper);
+  const grid = new THREE.GridHelper(ROOM_W * 2, 16, 0x999999, 0xdddddd);
+  grid.position.y = -0.13;
+  scene.add(grid);
 
-  // Solid wall material
-  const solidWallMat = new THREE.MeshStandardMaterial({
-    color: 0x1a2040, roughness: 0.6, metalness: 0.2,
-    emissive: 0x0a1020, emissiveIntensity: 0.3,
-  });
-  // Transparent front wall — user can see through this side
-  const frontWallMat = new THREE.MeshStandardMaterial({
-    color: 0x1d2747, roughness: 0.5, metalness: 0.1,
-    transparent: true, opacity: 0.25,
-  });
-
-  const wallDimW = ROOM_W * 2 + WALL_THICK * 2;
-  const wallDimD = ROOM_D * 2;
+  const solidWallMat = new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.8, metalness: 0, emissive: 0x111111, emissiveIntensity: 0.03 });
+  const frontWallMat = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.5, metalness: 0, transparent: true, opacity: 0.18 });
 
   function _addWall(x, y, z, w, h, d, mat) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(x, y, z);
     mesh.receiveShadow = true;
-    mesh.castShadow = true;
     scene.add(mesh);
   }
 
-  // Back wall (z-) — solid
   _addWall(0, ROOM_H / 2, -ROOM_D, wallDimW, ROOM_H, WALL_THICK, solidWallMat);
-  // Front wall (z+) — transparent for viewing
   _addWall(0, ROOM_H / 2, ROOM_D, wallDimW, ROOM_H, WALL_THICK, frontWallMat);
-  // Left wall (x-) — solid
   _addWall(-ROOM_W, ROOM_H / 2, 0, WALL_THICK, ROOM_H, wallDimD, solidWallMat);
-  // Right wall (x+) — solid
   _addWall(ROOM_W, ROOM_H / 2, 0, WALL_THICK, ROOM_H, wallDimD, solidWallMat);
-
-  // Floor grid
-  const grid = new THREE.GridHelper(ROOM_W * 2, 12, 0x2a3a5a, 0x1a2238);
-  grid.position.y = -0.13;
   scene.add(grid);
 
   // ============================================================
@@ -1551,6 +1531,7 @@ function mountRagdollScene(container) {
     skel.visible = true;
 
     const bodyDefs = [
+      // Lower body (brain-driven)
       { key: 'torso',   color: 0x5df2d6, halfH: 0.26, r: 0.22 },
       { key: 'lThigh',  color: 0x5dd3f2, halfH: 0.16, r: 0.12 },
       { key: 'rThigh',  color: 0x45d3ff, halfH: 0.16, r: 0.12 },
@@ -1558,6 +1539,16 @@ function mountRagdollScene(container) {
       { key: 'rShin',   color: 0xff8b45, halfH: 0.15, r: 0.11 },
       { key: 'lFoot',   color: 0xff5577, halfH: 0.08, r: 0.07 },
       { key: 'rFoot',   color: 0xff4d9d, halfH: 0.08, r: 0.07 },
+      // Upper body (passive, follows torso)
+      { key: 'chest',   color: 0x7be38a, halfH: 0.18, r: 0.19 },
+      { key: 'neck',    color: 0xa0daa0, halfH: 0.06, r: 0.08 },
+      { key: 'head',    color: 0x5df2d6, halfH: 0.14, r: 0.14 },
+      { key: 'lUarm',   color: 0x5dd3f2, halfH: 0.14, r: 0.08 },
+      { key: 'rUarm',   color: 0x45d3ff, halfH: 0.14, r: 0.08 },
+      { key: 'lLarm',   color: 0xffb84d, halfH: 0.12, r: 0.07 },
+      { key: 'rLarm',   color: 0xff8b45, halfH: 0.12, r: 0.07 },
+      { key: 'lHand',   color: 0xff5577, halfH: 0.06, r: 0.06 },
+      { key: 'rHand',   color: 0xff4d9d, halfH: 0.06, r: 0.06 },
     ];
 
     const meshes = {};
@@ -1577,21 +1568,22 @@ function mountRagdollScene(container) {
     debugSkeletons.push({ group: skel, meshes, offsetX: BEAR_OFFSETS[i] || 0 });
   }
 
-  // Update debug skeleton from snapshot
+  // Update debug skeleton from snapshot — use same centering as model
   function _updateDebugSkeleton(snap, bearIdx) {
     const skel = debugSkeletons[bearIdx];
-    if (!skel || !snap) return;
+    const b = bears[bearIdx];
+    if (!skel || !snap || !b) return;
     const bodies = snap.bodies || snap;
-    const ox = skel.offsetX;
 
     for (const [key, info] of Object.entries(skel.meshes)) {
       const body = bodies[key];
       if (!body) { info.mesh.visible = false; continue; }
       info.mesh.visible = true;
+      // Match model's coordinate system: center X/Z, offset Y to ground
       info.mesh.position.set(
-        body.x + ox,
-        body.y,
-        body.z
+        body.x - b.cx + b.offsetX,
+        Math.max(0, body.y - TORSO_TO_FEET) + (b.groundOffset || 0),
+        body.z - b.cz
       );
       info.mesh.quaternion.set(body.qx, body.qy, body.qz, body.qw);
     }

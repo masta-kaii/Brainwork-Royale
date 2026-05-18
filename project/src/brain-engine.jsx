@@ -193,7 +193,36 @@ function createRagdoll(world, originX = 0, originZ = 0) {
   const lFoot  = _capsuleBody(world, originX - HIP_DX,  FOOT_Y,  originZ + 0.02, FOOT_HALF, FOOT_R, 1.1);
   const rFoot  = _capsuleBody(world, originX + HIP_DX,  FOOT_Y,  originZ + 0.02, FOOT_HALF, FOOT_R, 1.1);
 
-  // Revolute joints around the X axis (pitch) — front/back swing.
+  // ---- Upper body (passive — not brain-driven, follows torso) ----
+  const CHEST_HALF = 0.18, CHEST_R = 0.19;
+  const NECK_HALF = 0.06, NECK_R = 0.08;
+  const HEAD_R = 0.14;
+  const UARM_HALF = 0.14, UARM_R = 0.08;
+  const LARM_HALF = 0.12, LARM_R = 0.07;
+  const HAND_R = 0.06;
+  const SHOULDER_DX = 0.24;
+
+  // Chest Y: above main torso
+  const CHEST_Y = TORSO_Y + TORSO_HALF + TORSO_R + CHEST_HALF;
+  const NECK_Y = CHEST_Y + CHEST_HALF + CHEST_R + NECK_HALF;
+  const HEAD_Y = NECK_Y + NECK_HALF + NECK_R + HEAD_R;
+
+  // Arms hang down from shoulders
+  const SHOULDER_Y = CHEST_Y + CHEST_HALF - UARM_R;
+  const ELBOW_Y = SHOULDER_Y - UARM_HALF * 2;
+
+  const chest   = _capsuleBody(world, originX,            CHEST_Y,    originZ, CHEST_HALF, CHEST_R, 0.8);
+  const neck    = _capsuleBody(world, originX,            NECK_Y,     originZ, NECK_HALF,  NECK_R,  0.5);
+  const head    = _capsuleBody(world, originX,            HEAD_Y,     originZ, HEAD_R,     HEAD_R,  0.6);
+  const lUarm   = _capsuleBody(world, originX-SHOULDER_DX,SHOULDER_Y, originZ, UARM_HALF,  UARM_R,  0.5);
+  const rUarm   = _capsuleBody(world, originX+SHOULDER_DX,SHOULDER_Y, originZ, UARM_HALF,  UARM_R,  0.5);
+  const lLarm   = _capsuleBody(world, originX-SHOULDER_DX,ELBOW_Y,    originZ, LARM_HALF,  LARM_R,  0.4);
+  const rLarm   = _capsuleBody(world, originX+SHOULDER_DX,ELBOW_Y,    originZ, LARM_HALF,  LARM_R,  0.4);
+  const lHand   = _capsuleBody(world, originX-SHOULDER_DX,ELBOW_Y-LARM_HALF*2-HAND_R, originZ, HAND_R, HAND_R, 0.3);
+  const rHand   = _capsuleBody(world, originX+SHOULDER_DX,ELBOW_Y-LARM_HALF*2-HAND_R, originZ, HAND_R, HAND_R, 0.3);
+
+  // ---- Joints ----
+  // Lower body joints (brain-driven hips + knees)
   function mkHip(thigh, sign) {
     const anchor1 = { x: sign * HIP_DX, y: -TORSO_HALF - TORSO_R, z: 0 };
     const anchor2 = { x: 0, y: THIGH_HALF + THIGH_R, z: 0 };
@@ -229,9 +258,46 @@ function createRagdoll(world, originX = 0, originZ = 0) {
   const lAnkle = mkAnkle(lShin, lFoot);   // passive — not exposed to brain
   const rAnkle = mkAnkle(rShin, rFoot);
 
+  // Upper body joints (passive — connected to torso)
+  function mkFixed(b1, b2, ax, ay, az, bx, by, bz) {
+    const desc = RAPIER.JointData.fixed(
+      { x: ax, y: ay, z: az }, { x: bx, y: by, z: bz },
+      { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }
+    );
+    return world.createImpulseJoint(desc, b1, b2, true);
+  }
+  function mkShoulder(uarm, sign) {
+    const desc = RAPIER.JointData.revolute(
+      { x: sign * SHOULDER_DX, y: CHEST_HALF + CHEST_R, z: 0 },
+      { x: 0, y: UARM_HALF + UARM_R, z: 0 }, { x: 1, y: 0, z: 0 }
+    );
+    const j = world.createImpulseJoint(desc, chest, uarm, true);
+    j.setLimits(-0.6, 1.4); return j;
+  }
+  function mkElbow(uarm, larm) {
+    const desc = RAPIER.JointData.revolute(
+      { x: 0, y: -UARM_HALF - UARM_R, z: 0 },
+      { x: 0, y: LARM_HALF + LARM_R, z: 0 }, { x: 1, y: 0, z: 0 }
+    );
+    const j = world.createImpulseJoint(desc, uarm, larm, true);
+    j.setLimits(-0.05, 1.5); return j;
+  }
+
+  const spineJ = mkFixed(torso, chest, 0, TORSO_HALF + TORSO_R, 0, 0, -CHEST_HALF - CHEST_R, 0);
+  const neckJ  = mkFixed(chest, neck, 0, CHEST_HALF + CHEST_R, 0, 0, -NECK_HALF - NECK_R, 0);
+  const headJ  = mkFixed(neck, head, 0, NECK_HALF + NECK_R, 0, 0, -HEAD_R, 0);
+  const lShld  = mkShoulder(lUarm, -1);
+  const rShld  = mkShoulder(rUarm, 1);
+  const lElb   = mkElbow(lUarm, lLarm);
+  const rElb   = mkElbow(rUarm, rLarm);
+  const lWrst  = mkFixed(lLarm, lHand, 0, -LARM_HALF - LARM_R, 0, 0, HAND_R, 0);
+  const rWrst  = mkFixed(rLarm, rHand, 0, -LARM_HALF - LARM_R, 0, 0, HAND_R, 0);
+
   return {
-    bodies: { torso, lThigh, rThigh, lShin, rShin, lFoot, rFoot },
-    joints: { lHip, rHip, lKnee, rKnee, lAnkle, rAnkle },
+    bodies: { torso, lThigh, rThigh, lShin, rShin, lFoot, rFoot,
+              chest, neck, head, lUarm, rUarm, lLarm, rLarm, lHand, rHand },
+    joints: { lHip, rHip, lKnee, rKnee, lAnkle, rAnkle,
+              spineJ, neckJ, headJ, lShld, rShld, lElb, rElb, lWrst, rWrst },
     spawnY: TORSO_Y,
     feetY: FOOT_Y - FOOT_R - 0.02,
     torsoToFeet: TORSO_Y - (FOOT_Y - FOOT_R - 0.02),
@@ -270,7 +336,7 @@ function makeWorld() {
   const RAPIER = window.RAPIER;
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
 
-  const ROOM_W = 6, ROOM_D = 6, ROOM_H = 3;
+  const ROOM_W = 10, ROOM_D = 10, ROOM_H = 4;
   const WALL_THICK = 0.3;
 
   // Solid floor
