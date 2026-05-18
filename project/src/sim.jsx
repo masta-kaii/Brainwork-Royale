@@ -632,16 +632,20 @@ function createDailySim(you, ghostRuns) {
   const maze = genMaze(cols, rows, seed);
   maze._seed = seed;
 
-  // Build ghost brains from stored runs
-  const ghostBrains = (ghostRuns || []).map(r => {
-    try { return window.brainEngine?.brainFromJSON?.(r) || null; }
-    catch (e) { return null; }
+  // Build ghost maze brains from stored runs (use maze brains, not locomotion)
+  const ghostMazeBrains = (ghostRuns || []).map(r => {
+    try {
+      // Try maze brain format first, then fall back to old brain format
+      if (r.mazeBrainWeights) return mazeBrainFromJSON(r.mazeBrainWeights);
+      if (r.brainWeights) return mazeBrainFromJSON(r.brainWeights);
+      return null;
+    } catch (e) { return null; }
   }).filter(Boolean);
 
-  // Fill remaining slots with random bot brains
-  const numGhosts = Math.max(1, Math.min(15, ghostBrains.length || 7));
+  // Fill remaining slots with random maze brains
+  const numGhosts = Math.max(1, Math.min(15, ghostMazeBrains.length || 7));
   const botBrains = Array.from({ length: numGhosts }, (_, i) =>
-    ghostBrains[i] || window.brainEngine?.makeBrain?.(window.brainEngine?.DEFAULT_ARCH) || null
+    ghostMazeBrains[i] || makeMazeBrain()
   );
 
   return createBattleSim(seed, you, {

@@ -48,6 +48,17 @@ function App({ user, initialState }) {
   const [mazeFitness, setMazeFitness] = useState(0);
   const [mazeTraining, setMazeTraining] = useState(false);
 
+  // Load maze brain from Firestore on mount
+  React.useEffect(() => {
+    window.dataLayer?.loadMazeBrain?.(uid).then(saved => {
+      if (saved && saved.weights) {
+        setMazeBrain(saved);
+        setMazeGen(saved.meta?.gen || 0);
+        setMazeFitness(saved.meta?.fitness || 0);
+      }
+    }).catch(() => {});
+  }, [uid]);
+
   // AI object passed to BattleScreen includes trained skills + maze brain
   const aiBrain = useMemo(() => {
     const keys = ["run-L3", "run-L2", "run-L1", "walk-L3", "walk-L2", "walk-L1", "balance-L3"];
@@ -164,43 +175,59 @@ function App({ user, initialState }) {
     for (let g = 0; g < genCount; g++) {
       // Evaluate population on a fresh maze
       const maze = window.genMaze?.(21, 21, seed + g);
-      if (!maze) break;
+      if (!maze || !maze.grid) break;
+      const exit = maze.exit || [maze.cols - 2, maze.rows - 2];
+      const startX = (maze.start ? maze.start[0] : 1) + 0.5;
+      const startY = (maze.start ? maze.start[1] : 1) + 0.5;
+      const startDist = Math.hypot(exit[0] - startX, exit[1] - startY);
 
       for (const p of pop) {
         let fitness = 0;
         // Run brain on maze for evaluation
         let agent = {
-          x: 1.5, y: 1.5, facing: 0, speedPerTick: 0.13,
+          x: startX, y: startY, facing: 0, speedPerTick: 0.13,
           _memory: [], _stuckTimer: 0,
           mazeBrain: p.brain,
         };
         let ticks = 0;
-        const exit = maze.treasure || maze.exit || [19, 19];
-        const startDist = Math.hypot(exit[0] - 1, exit[1] - 1);
-        let lastDist = startDist;
 
-        while (ticks < 600) {
-          if (!maze.grid) break;
+        while (ticks < 600 && agent._stuckTimer < 200) {
           const obs = typeof window.mazeObserve === 'function' ? window.mazeObserve(agent, maze) : [0,0,0,0,0,0,0,0];
           const out = typeof window.mazeForward === 'function' ? window.mazeForward(p.brain, obs) : [0,0,0,0];
           const turn = out[1] - out[0];
           const move = out[2] - out[3];
+
+          // Memory
+          if (!agent._memory) agent._memory = [];
+          agent._memory.push([agent.x, agent.y]);
+          if (agent._memory.length > 24) agent._memory.shift();
+
           agent.facing += Math.max(-0.3, Math.min(0.3, turn * 0.3));
           if (move > -0.2) {
             const step = 0.13 * Math.max(0.1, (move + 1) / 2);
+            const px = agent.x, py = agent.y;
             agent.x += Math.cos(agent.facing) * step;
             agent.y += Math.sin(agent.facing) * step;
+            // Wall collision
+            const cx = Math.floor(agent.x), cy = Math.floor(agent.y);
+            if (cx < 0 || cy < 0 || cx >= (maze.cols || 21) || cy >= (maze.rows || 21) || maze.grid[cy][cx] === 1) {
+              agent.x = px; agent.y = py;
+              agent._stuckTimer += 2;
+            } else {
+              agent._stuckTimer = Math.max(0, agent._stuckTimer - 1);
+            }
+          } else {
+            agent._stuckTimer++;
           }
+
+          // Check exit
           const cx = Math.floor(agent.x), cy = Math.floor(agent.y);
-          if (cx < 0 || cy < 0 || cx >= (maze.cols || 21) || cy >= (maze.rows || 21) || (maze.grid[cy] && maze.grid[cy][cx] === 1)) {
-            agent.x = 1.5; agent.y = 1.5; // reset if stuck in wall
-          }
           if (cx === exit[0] && cy === exit[1]) break;
           ticks++;
         }
 
         const dist = Math.hypot(exit[0] - agent.x, exit[1] - agent.y);
-        fitness = Math.max(0, 1 - dist / startDist) * 5 + (ticks < 600 ? (600 - ticks) / 600 * 3 : 0);
+        fitness = Math.max(0, (1 - dist / startDist) * 5) + (ticks < 600 ? (600 - ticks) / 600 * 3 : 0);
         p.fitness = fitness;
       }
 
@@ -227,6 +254,8 @@ function App({ user, initialState }) {
     setMazeGen(g => g + genCount);
     setMazeFitness(bestFit);
     setMazeTraining(false);
+    // Persist to Firestore
+    if (json) window.dataLayer?.saveMazeBrain?.(uid, json);
     showToast(`Brain trained ${genCount} gens · fitness ${bestFit.toFixed(2)}`);
   };
 
@@ -481,7 +510,7 @@ function App({ user, initialState }) {
                   name: ai.name, class: ai.class,
                   ticks: replay.totalTicks, placement,
                   fitness: playerAgent?.hp || 0,
-                  brainWeights: ai.brain ? window.brainEngine?.brainToJSON?.(ai.brain) : null,
+                  mazeBrainWeights: mazeBrain,  // save maze brain so others can race your ghost
                 });
                 showToast(`Daily run saved · placed #${placement}`);
               }}

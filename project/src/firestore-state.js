@@ -366,6 +366,25 @@ async function loadDailyRuns(dateKey, limitCount = 20) {
   } catch (e) { warn("loadDailyRuns", e); return []; }
 }
 
+// ---- Maze brain persistence ----
+function mazeBrainRef(uid) {
+  const f = fb();
+  return f.doc(f.db, "users", uid, "brains", "maze");
+}
+async function saveMazeBrain(uid, brainJson) {
+  try {
+    const f = fb();
+    await f.setDoc(mazeBrainRef(uid), { ...brainJson, updatedAt: f.serverTimestamp() });
+  } catch (e) { warn("saveMazeBrain", e); }
+}
+async function loadMazeBrain(uid) {
+  try {
+    const f = fb();
+    const snap = await f.getDoc(mazeBrainRef(uid));
+    return snap.exists() ? snap.data() : null;
+  } catch (e) { warn("loadMazeBrain", e); return null; }
+}
+
 // ============================================================
 // Expose
 // ============================================================
@@ -387,4 +406,6 @@ window.dataLayer = {
   deleteBrain,
   saveDailyRun,
   loadDailyRuns,
+  saveMazeBrain,
+  loadMazeBrain,
 };
