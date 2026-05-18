@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brainwork Royale — Phase 4</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'JetBrains Mono','Courier New',monospace;background:#0a0d14;color:#e0e4f0;min-height:100vh}
+.header{padding:40px 32px 0;max-width:800px;margin:0 auto}
+.header h1{font-size:28px;font-weight:800;color:#5df2d6;letter-spacing:.02em}
+.header p{font-size:14px;color:#8b91b8;margin-top:8px;line-height:1.6;max-width:600px}
+.grid{max-width:800px;margin:32px auto;padding:0 32px 48px;display:grid;gap:16px}
+.card{background:#0b0d16;border:1px solid #1b203a;border-radius:14px;padding:24px;display:grid;grid-template-columns:56px 1fr auto;gap:20px;align-items:center;transition:border-color 200ms,transform 150ms;cursor:pointer;text-decoration:none;color:inherit}
+.card:hover{border-color:#5df2d6;transform:translateY(-2px)}
+.card:hover .card__phase{background:rgba(93,242,214,.15);color:#5df2d6;border-color:#5df2d6}
+.card__phase{width:56px;height:56px;border-radius:12px;border:2px solid #2a3052;display:grid;place-items:center;font-size:22px;font-weight:800;color:#5a608a;transition:all 200ms}
+.card__phase.live{border-color:#5df2d6;background:rgba(93,242,214,.08);color:#5df2d6;box-shadow:0 0 20px rgba(93,242,214,.15)}
+.card__title{font-size:16px;font-weight:700;color:#f3f5ff;margin-bottom:4px}
+.card__desc{font-size:12px;color:#8b91b8;line-height:1.5}
+.card__tag{font-size:9px;letter-spacing:.15em;text-transform:uppercase;padding:3px 8px;border-radius:6px;border:1px solid}
+.card__tag.prototype{border-color:rgba(255,184,77,.3);color:#ffb84d;background:rgba(255,184,77,.06)}
+.card__tag.live{border-color:rgba(93,242,214,.3);color:#5df2d6;background:rgba(93,242,214,.06)}
+.divider{height:1px;background:#1b203a;margin:0 32px;max-width:800px;margin:0 auto}
+.section-label{max-width:800px;margin:24px auto 8px;padding:0 32px;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#5a608a}
+.footer{max-width:800px;margin:0 auto;padding:32px;text-align:center;font-size:10px;color:#383d63}
+.footer a{color:#5a608a;text-decoration:none}
+.footer a:hover{color:#8b91b8}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>BRAINWORK ROYALE</h1>
+  <p>Solo dev, built in the open. Each phase is a working prototype — playable right now, zero install.</p>
+</div>
+
+<div class="section-label">Main App</div>
+<div class="grid">
+  <a class="card" href="app.html">
+    <div class="card__phase live">B</div>
+    <div>
+      <div class="card__title">3D Battle Arena</div>
+      <div class="card__desc">Full Three.js app with Firebase auth, ragdoll physics training (7 skills), daily maze ghost races, and PEP-Smol 3D character.</div>
+    </div>
+    <div class="card__tag live">LIVE</div>
+  </a>
+</div>
+
+<div class="divider"></div>
+
+<div class="section-label">Prototypes · The Journey</div>
+<div class="grid">
+  <a class="card" href="phase1.html">
+    <div class="card__phase">P1</div>
+    <div>
+      <div class="card__title">Phase 1 — Dumb Playable</div>
+      <div class="card__desc">Scripted wall-follower AI. Quiz for upgrade points. Canvas maze. "Kinda fun" — the simplest possible game loop.</div>
+    </div>
+    <div class="card__tag prototype">Prototype</div>
+  </a>
+
+  <a class="card" href="phase2.html">
+    <div class="card__phase">P2</div>
+    <div>
+      <div class="card__title">Phase 2 — Neural Evolution</div>
+      <div class="card__desc">Feedforward neural network learns via genetic algorithm. Brain overlay shows inputs/outputs. Fitness curve climbs with training.</div>
+    </div>
+    <div class="card__tag prototype">Prototype</div>
+  </a>
+
+  <a class="card" href="phase3.html">
+    <div class="card__phase">P3</div>
+    <div>
+      <div class="card__title">Phase 3 — Ghost Races</div>
+      <div class="card__desc">Daily maze, 16-agent ghost races, leaderboard. Async multiplayer — compete without being online at the same time.</div>
+    </div>
+    <div class="card__tag prototype">Prototype</div>
+  </a>
+
+  <div class="card" style="cursor:default;opacity:.5" onclick="return false">
+    <div class="card__phase">P4</div>
+    <div>
+      <div class="card__title">Phase 4 — Identity & Fidelity</div>
+      <div class="card__desc">Classes, 3D character rig, Strava integration, seasons. This hub page is the first step. More coming.</div>
+    </div>
+    <div class="card__tag prototype" style="color:#5a608a;border-color:#2a3052">Building</div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section-label">Links</div>
+<div class="grid" style="grid-template-columns:1fr 1fr;gap:12px">
+  <a class="card" href="https://github.com/masta-kaii/Brainwork-Royale" target="_blank" rel="noopener" style="grid-template-columns:1fr">
+    <div class="card__title">GitHub ↗</div>
+    <div class="card__desc">Source code, build plan, changelog.</div>
+  </a>
+  <a class="card" href="BUILD_PLAN.md" style="grid-template-columns:1fr">
+    <div class="card__title">Build Plan</div>
+    <div class="card__desc">Full 4-phase master plan.</div>
+  </a>
+</div>
+
+<footer class="footer">
+  © 2026 Brainwork Royale · <a href="https://github.com/masta-kaii/Brainwork-Royale">GitHub</a> · <a href="index.html">Landing</a> · <a href="app.html">App</a>
+</footer>
+</body>
+</html>

@@ -246,6 +246,20 @@ function App({ user, initialState }) {
             </div>
           ))}
 
+          <div className="rail__nav-label">Dev</div>
+          <a className="rail-item" href="phase4.html" style={{ textDecoration: "none" }}>
+            <span className="rail-item__dot" style={{ background: "var(--amber)" }} />Phase Hub
+          </a>
+          <a className="rail-item" href="phase1.html" style={{ textDecoration: "none" }}>
+            <span className="rail-item__dot" />P1 · Dumb Playable
+          </a>
+          <a className="rail-item" href="phase2.html" style={{ textDecoration: "none" }}>
+            <span className="rail-item__dot" />P2 · Neural Evolution
+          </a>
+          <a className="rail-item" href="phase3.html" style={{ textDecoration: "none" }}>
+            <span className="rail-item__dot" />P3 · Ghost Races
+          </a>
+
           <div className="rail__nav-label">Meta</div>
           <div className="rail-item" onClick={() => setClassModal(true)}>
             <span className="rail-item__dot" />Change class
