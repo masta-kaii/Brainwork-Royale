@@ -18,6 +18,7 @@ canvas{display:block;width:100vw;height:100vh}
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const info = document.getElementById('info');
@@ -76,9 +77,14 @@ sphere.position.set(2, 0.5, 0);
 sphere.castShadow = true;
 scene.add(sphere);
 
+// Draco decoder — required for compressed GLB
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+
 // Load PEP-Smol
 info.textContent = 'LOADING PEP-SMOL…';
 const loader = new GLTFLoader();
+loader.setDRACOLoader(dracoLoader);
 loader.load(
   'assets/pep-smol-draco.glb',
   (gltf) => {
