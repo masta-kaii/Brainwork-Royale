@@ -1519,6 +1519,63 @@ function mountRagdollScene(container) {
   let pepModel = bears[0]?.model || null;
   let pepMixer = bears[0]?.mixer || null;
 
+  // ============================================================
+  // DEBUG: Physics skeleton visualization — render the actual
+  // ragdoll bodies as colored capsules so the physics is visible.
+  // ============================================================
+  const debugSkeletons = [];
+  const debugCapsuleGeo = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
+  for (let i = 0; i < POPULATION; i++) {
+    const skel = new THREE.Group();
+    skel.visible = true;
+
+    const bodyDefs = [
+      { key: 'torso',   color: 0x5df2d6, halfH: 0.30, r: 0.16 },
+      { key: 'lThigh',  color: 0x5dd3f2, halfH: 0.22, r: 0.10 },
+      { key: 'rThigh',  color: 0x45d3ff, halfH: 0.22, r: 0.10 },
+      { key: 'lShin',   color: 0xffb84d, halfH: 0.20, r: 0.09 },
+      { key: 'rShin',   color: 0xff8b45, halfH: 0.20, r: 0.09 },
+      { key: 'lFoot',   color: 0xff5577, halfH: 0.10, r: 0.05 },
+      { key: 'rFoot',   color: 0xff4d9d, halfH: 0.10, r: 0.05 },
+    ];
+
+    const meshes = {};
+    for (const def of bodyDefs) {
+      const geo = new THREE.CapsuleGeometry(def.r, def.halfH * 2, 8, 12);
+      const mat = new THREE.MeshStandardMaterial({
+        color: def.color, roughness: 0.6, metalness: 0.1,
+        transparent: true, opacity: 0.7, depthWrite: true,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      skel.add(mesh);
+      meshes[def.key] = { mesh, halfH: def.halfH, r: def.r, color: def.color };
+    }
+    scene.add(skel);
+    debugSkeletons.push({ group: skel, meshes, offsetX: BEAR_OFFSETS[i] || 0 });
+  }
+
+  // Update debug skeleton from snapshot
+  function _updateDebugSkeleton(snap, bearIdx) {
+    const skel = debugSkeletons[bearIdx];
+    if (!skel || !snap) return;
+    const bodies = snap.bodies || snap;
+    const ox = skel.offsetX;
+
+    for (const [key, info] of Object.entries(skel.meshes)) {
+      const body = bodies[key];
+      if (!body) { info.mesh.visible = false; continue; }
+      info.mesh.visible = true;
+      info.mesh.position.set(
+        body.x + ox,
+        body.y,
+        body.z
+      );
+      info.mesh.quaternion.set(body.qx, body.qy, body.qz, body.qw);
+    }
+  }
+
   function playClip(name, fadeS = 0.25, loop = true, bearIdx = 0) {
     const b = bears[bearIdx];
     if (!b || !b.mixer) return;
@@ -1541,7 +1598,7 @@ function mountRagdollScene(container) {
   for (let i = 0; i < bears.length; i++) playClip("Idle 01", 0, true, i);
 
   // Apply a single Rapier snapshot to bear `bearIdx`. snap.bodies.torso
-  // drives where THIS bear is rendered.
+  // drives where THIS bear is rendered. Also updates physics debug skeleton.
   function applySnapshot(snap, bearIdx = 0) {
     const b = bears[bearIdx];
     if (!b || !b.model) return;
@@ -1554,7 +1611,13 @@ function mountRagdollScene(container) {
       torso.z - b.cz
     );
     b.model.quaternion.set(torso.qx, torso.qy, torso.qz, torso.qw);
+    // Update debug physics skeleton
+    _updateDebugSkeleton(snap, bearIdx);
   }
+
+  // Wire debug update into applySnapshot (already called above)
+  // Remove the duplicate wiring from earlier
+  const _origApplySnapshot = null;
 
   const _legAxis = new THREE.Vector3(1, 0, 0);
   const _tmpQ = new THREE.Quaternion();
