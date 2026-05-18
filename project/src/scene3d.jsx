@@ -1633,7 +1633,7 @@ function mountRagdollScene(container) {
   // Computed from PEP-Smol proportions: TORSO_Y(1.72) - feet(-0.07) = 1.79
   const TORSO_TO_FEET = 1.79;
 
-  // Physics body position indicators — small colored spheres at each ragdoll body
+  // Physics body position indicators — colored spheres + bone lines
   const bodyMarkers = {};
   const markerColors = { torso: 0x5df2d6, lThigh: 0x5dd3f2, rThigh: 0x45d3ff, lShin: 0xffb84d, rShin: 0xff8b45, lFoot: 0xff5577, rFoot: 0xff4d9d };
   for (const [key, color] of Object.entries(markerColors)) {
@@ -1646,6 +1646,25 @@ function mountRagdollScene(container) {
     scene.add(sphere);
     bodyMarkers[key] = sphere;
   }
+
+  // Skeleton bone lines connecting body markers
+  const boneLines = new THREE.Group();
+  boneLines.renderOrder = 998;
+  scene.add(boneLines);
+  const boneMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false });
+  const skeletonBones = [
+    ['torso', 'lThigh'], ['torso', 'rThigh'],
+    ['lThigh', 'lShin'], ['rThigh', 'rShin'],
+    ['lShin', 'lFoot'], ['rShin', 'rFoot'],
+  ];
+  const linePool = skeletonBones.map(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 0,0,0], 3));
+    const line = new THREE.Line(geo, boneMat);
+    line.visible = false;
+    boneLines.add(line);
+    return line;
+  });
 
   function applySnapshot(snap, bearIdx = 0) {
     const b = bears[bearIdx];
@@ -1670,6 +1689,22 @@ function mountRagdollScene(container) {
         sphere.position.set(body.x, body.y, body.z);
       } else {
         sphere.visible = false;
+      }
+    }
+
+    // Update skeleton bone lines
+    for (let i = 0; i < skeletonBones.length; i++) {
+      const [fromKey, toKey] = skeletonBones[i];
+      const from = bodies[fromKey], to = bodies[toKey];
+      const line = linePool[i];
+      if (from && to) {
+        line.visible = true;
+        const pos = line.geometry.attributes.position;
+        pos.setXYZ(0, from.x, from.y, from.z);
+        pos.setXYZ(1, to.x, to.y, to.z);
+        pos.needsUpdate = true;
+      } else {
+        line.visible = false;
       }
     }
   }
