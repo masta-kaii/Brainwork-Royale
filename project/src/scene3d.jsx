@@ -1462,7 +1462,12 @@ function mountRagdollScene(container) {
           o.receiveShadow = true;
           if (o.material) {
             const list = Array.isArray(o.material) ? o.material : [o.material];
-            const next = list.map((m) => m.clone());
+            const next = list.map((m) => {
+              const c = m.clone();
+              c.emissive = c.emissive || new THREE.Color(0x111111);
+              c.emissiveIntensity = (c.emissiveIntensity || 0) + 0.4;
+              return c;
+            });
             o.material = Array.isArray(o.material) ? next : next[0];
           }
         }
@@ -1482,12 +1487,12 @@ function mountRagdollScene(container) {
           bonePositions[o.name] = { x: wp.x, y: wp.y, z: wp.z };
         }
       });
-      // Expose so brain-engine can use them for ragdoll creation
       window._pepBonePositions = bonePositions;
 
-      // Position model at spawn pose so it's visible before training starts
-      model.position.set(0, groundOffset, 0);
+      // Position at room center for maximum visibility
+      model.position.set(0, groundOffset + 0.5, -1);
       scene.add(model);
+      console.log("[scene3d] PEP-Smol added. groundOffset=", groundOffset.toFixed(2), "scale=", scale.toFixed(3), "bones=", Object.keys(bonePositions).length);
 
       mixer = new THREE.AnimationMixer(model);
       window.PEP_BASE.animations.forEach((clip) => {
@@ -1531,7 +1536,7 @@ function mountRagdollScene(container) {
   const debugCapsuleGeo = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
   for (let i = 0; i < POPULATION; i++) {
     const skel = new THREE.Group();
-    skel.visible = true;
+    skel.visible = false;  // hidden for debug — verify model visibility first
 
     const bodyDefs = [
       // Lower body (brain-driven)
