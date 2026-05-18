@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brainwork Royale — Phase 3</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'JetBrains Mono','Courier New',monospace;background:#0a0d14;color:#e0e4f0;min-height:100vh;display:grid;place-items:center}
+#app{max-width:1024px;width:100%;padding:24px;display:grid;gap:20px}
+.header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.header h1{font-size:20px;font-weight:800;color:#5df2d6;letter-spacing:.04em}
+.header span{font-size:11px;color:#5a608a;letter-spacing:.1em}
+.main{display:grid;grid-template-columns:1fr 320px;gap:20px}
+@media(max-width:780px){.main{grid-template-columns:1fr}}
+.canvas-wrap{
+  background:#050810;border:1px solid #2a3052;
+  border-radius:12px;overflow:hidden;aspect-ratio:1;position:relative;
+}
+canvas{width:100%;height:100%;display:block}
+.hud{
+  position:absolute;top:10px;left:10px;right:10px;
+  display:flex;justify-content:space-between;gap:8px;pointer-events:none;
+}
+.hud-tag{
+  background:rgba(0,0,0,.6);border:1px solid #2a3052;
+  padding:4px 10px;border-radius:6px;font-size:10px;letter-spacing:.12em;
+  color:#8b91b8;backdrop-filter:blur(4px);
+}
+.hud-tag.mint{color:#5df2d6;border-color:rgba(93,242,214,.3)}
+.sidebar{display:flex;flex-direction:column;gap:14px}
+.panel{background:#0b0d16;border:1px solid #1b203a;border-radius:10px;padding:14px}
+.panel-title{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#5a608a;margin-bottom:10px}
+.quiz-q{font-size:13px;font-weight:600;color:#f3f5ff;margin-bottom:8px;line-height:1.4}
+.quiz-opts{display:grid;gap:6px}
+.quiz-opt{
+  padding:8px 12px;border-radius:6px;cursor:pointer;
+  border:1px solid #2a3052;background:#131626;color:#cdd2ee;
+  font-size:12px;font-family:inherit;text-align:left;
+  transition:border-color 120ms,background 120ms;
+}
+.quiz-opt:hover{border-color:#5a608a;background:#1c2138}
+.quiz-opt.correct{border-color:#5df2d6;background:rgba(93,242,214,.08);color:#5df2d6}
+.quiz-opt.wrong{border-color:#ff4d9d;background:rgba(255,77,157,.08);color:#ff4d9d}
+.quiz-feedback{font-size:11px;margin-top:6px;min-height:16px;letter-spacing:.06em}
+.stat-row{display:grid;grid-template-columns:1fr 48px;align-items:center;gap:8px;margin:3px 0;font-size:11px}
+.stat-name{color:#8b91b8;font-size:10px;letter-spacing:.08em}
+.stat-val{color:#f3f5ff;font-weight:600;text-align:right}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.btn{
+  padding:10px 18px;border-radius:8px;cursor:pointer;
+  font-family:inherit;font-size:12px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid #2a3052;background:#131626;color:#f3f5ff;
+  transition:background 120ms,border-color 120ms;
+}
+.btn:hover{background:#1c2138;border-color:#5a608a}
+.btn--primary{background:#5df2d6;color:#0a0d14;border-color:#5df2d6;box-shadow:0 4px 20px rgba(93,242,214,.2)}
+.btn--primary:hover{background:#7df8e6}
+.btn--primary:disabled{opacity:.3;cursor:default;box-shadow:none}
+.btn--amber{background:#ffb84d;color:#0a0d14;border-color:#ffb84d}
+.btn--amber:hover{background:#ffcc70}
+.btn--amber:disabled{opacity:.3}
+.btn--sm{padding:6px 12px;font-size:10px}
+.tokens-badge{font-size:24px;font-weight:800;color:#ffb84d;letter-spacing:.04em}
+.tokens-label{font-size:10px;color:#5a608a;letter-spacing:.1em}
+.gen-bar-wrap{height:6px;background:#1c2138;border-radius:999px;overflow:hidden;margin-top:4px}
+.gen-bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#5df2d6,#ffb84d);transition:width 300ms}
+.fitness-chart{width:100%;height:50px;background:rgba(0,0,0,.3);border-radius:6px;margin:6px 0}
+.result{text-align:center;padding:16px 0}
+.result__status{font-size:20px;font-weight:800;color:#5df2d6;letter-spacing:.02em}
+.result__time{font-size:13px;color:#8b91b8;margin-top:4px}
+/* leaderboard */
+.lb-row{
+  display:grid;grid-template-columns:28px 1fr 60px 70px;
+  align-items:center;gap:8px;padding:4px 8px;
+  border-radius:4px;font-size:11px;margin:2px 0;
+}
+.lb-row:hover{background:rgba(93,242,214,.05)}
+.lb-row.you{border:1px solid #5df2d6;background:rgba(93,242,214,.08)}
+.lb-rank{color:#5a608a;font-weight:700;text-align:center}
+.lb-name{color:#cdd2ee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-time{color:#5df2d6;text-align:right;font-weight:600}
+.lb-fitness{color:#8b91b8;text-align:right;font-size:10px}
+/* ghost legend */
+.ghost-legend{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0}
+.ghost-chip{
+  font-size:9px;padding:2px 6px;border-radius:4px;
+  border:1px solid rgba(255,255,255,.1);
+  color:#8b91b8;letter-spacing:.05em;
+}
+.ghost-chip.you{border-color:#5df2d6;color:#5df2d6}
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:#131626;border:1px solid #5df2d6;border-radius:8px;
+  padding:10px 20px;font-size:12px;color:#5df2d6;
+  animation:toastIn 300ms ease-out;
+  pointer-events:none;z-index:100;
+}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <div>
+      <h1>BRAINWORK ROYALE</h1>
+      <span>Phase 3 · GHOST RACES</span>
+    </div>
+    <span style="font-size:11px;color:#ffb84d" id="todayDate"></span>
+  </div>
+
+  <div class="main">
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="canvas"></canvas>
+      <div class="hud">
+        <span class="hud-tag mint" id="hudState">READY</span>
+        <span class="hud-tag" id="hudInfo">0 agents</span>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <!-- Status -->
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end">
+          <div class="tokens-label">TRAINING TOKENS</div>
+          <div class="tokens-label" id="runStatus">no run today</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="tokens-badge" id="tokenCount">3</span>
+          <span style="font-size:12px;color:#8b91b8" id="lineageInfo">gen 0 · fit —</span>
+        </div>
+        <div class="gen-bar-wrap"><div class="gen-bar-fill" id="genBar" style="width:0%"></div></div>
+        <canvas class="fitness-chart" id="fitnessChart"></canvas>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn btn--amber btn--sm" id="trainBtn">TRAIN 1</button>
+          <button class="btn btn--sm" id="train10Btn">10</button>
+          <button class="btn btn--sm" id="trainAllBtn">ALL</button>
+        </div>
+        <div id="trainProgress" style="font-size:10px;color:#5a608a;margin-top:4px;min-height:14px"></div>
+      </div>
+
+      <!-- Official Run -->
+      <div class="panel">
+        <div class="panel-title">Today's Maze</div>
+        <div style="font-size:11px;color:#8b91b8;margin-bottom:8px" id="mazeInfo">Seed: —</div>
+        <div class="btn-row">
+          <button class="btn btn--primary" id="runOfficialBtn" style="flex:1" disabled>🏁 SUBMIT OFFICIAL RUN</button>
+        </div>
+        <div class="btn-row" style="margin-top:6px">
+          <button class="btn btn--sm" id="replayBestBtn" disabled>▶ Replay best</button>
+        </div>
+      </div>
+
+      <!-- Leaderboard -->
+      <div class="panel">
+        <div class="panel-title">Leaderboard · Today</div>
+        <div id="leaderboard" style="max-height:200px;overflow-y:auto">
+          <div style="font-size:10px;color:#5a608a;text-align:center;padding:12px">
+            No runs yet today.<br/>Be the first!
+          </div>
+        </div>
+        <div class="ghost-legend" id="ghostLegend"></div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="panel" id="quizPanel">
+        <div class="panel-title">Quiz · earn tokens</div>
+        <div id="quizContent"></div>
+      </div>
+
+      <!-- Brain -->
+      <div class="panel">
+        <div class="panel-title">Brain</div>
+        <div style="font-size:10px;color:#8b91b8;line-height:1.5" id="brainInfo">
+          8→8→4 · ~100 weights<br/>
+          gen 0 · best fit —
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn--sm" id="shareBtn">📋 Share seed</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// PRNG + MAZE (same as Phase 2)
+// ============================================================
+function createRNG(seed){let s=seed|0||1;if(s===0)s=1;return function(){s^=s<<13;s^=s>>>17;s^=s<<5;return(s>>>0)/0xffffffff}}
+function generateMaze(cols,rows,seed){
+  const rand=createRNG(seed);
+  const grid=Array.from({length:rows},()=>Array(cols).fill(1));
+  const W=Math.floor((cols-1)/2),H=Math.floor((rows-1)/2);
+  const visited=Array.from({length:H},()=>Array(W).fill(false));
+  function cellTo(cx,cy){return[cx*2+1,cy*2+1]}
+  function carve(cx,cy){
+    visited[cy][cx]=true;const[gx,gy]=cellTo(cx,cy);grid[gy][gx]=0;
+    const dirs=[[0,-1],[1,0],[0,1],[-1,0]];
+    for(let i=dirs.length-1;i>0;i--){const j=Math.floor(rand()*(i+1));[dirs[i],dirs[j]]=[dirs[j],dirs[i]]}
+    for(const[dx,dy] of dirs){
+      const nx=cx+dx,ny=cy+dy;
+      if(nx>=0&&ny>=0&&nx<W&&ny<H&&!visited[ny][nx]){
+        const[gx1,gy1]=cellTo(cx,cy),[gx2,gy2]=cellTo(nx,ny);
+        grid[(gy1+gy2)/2][(gx1+gx2)/2]=0;carve(nx,ny);
+      }
+    }
+  }
+  carve(0,0);return{grid,cols,rows,start:[1,1],exit:[cols-2,rows-2]};
+}
+
+// ============================================================
+// NEURAL NETWORK + GA (same as Phase 2)
+// ============================================================
+const BRAIN_ARCH={inputs:8,hidden:8,outputs:4};
+function makeBrain(){const a=BRAIN_ARCH;return{arch:{...a,activation:'tanh'},w1:Array.from({length:a.hidden},()=>Array.from({length:a.inputs},()=>Math.random()*2-1)),b1:Array.from({length:a.hidden},()=>Math.random()*.2-.1),w2:Array.from({length:a.outputs},()=>Array.from({length:a.hidden},()=>Math.random()*2-1)),b2:Array.from({length:a.outputs},()=>Math.random()*.2-.1)}}
+function cloneBrain(b){return{arch:{...b.arch},w1:b.w1.map(r=>r.slice()),b1:b.b1.slice(),w2:b.w2.map(r=>r.slice()),b2:b.b2.slice()}}
+function forward(b,x){const{h,o}=b.arch;const hh=new Array(h);for(let i=0;i<h;i++){let s=b.b1[i];const r=b.w1[i];for(let j=0;j<b.arch.inputs;j++)s+=r[j]*x[j];hh[i]=Math.tanh(s)}const y=new Array(o);for(let i=0;i<o;i++){let s=b.b2[i];const r=b.w2[i];for(let j=0;j<h;j++)s+=r[j]*hh[j];y[i]=Math.tanh(s)}return y}
+function mutate(b,r,sigma){if(!r)r=.08;if(!sigma)sigma=.3;const c=cloneBrain(b);const m=v=>(Math.random()<r?v+(Math.random()*2-1)*sigma:v);c.w1=c.w1.map(r=>r.map(m));c.b1=c.b1.map(m);c.w2=c.w2.map(r=>r.map(m));c.b2=c.b2.map(m);return c}
+function brainToJSON(b,meta){return{schema:'br3',arch:b.arch,weights:{w1:b.w1,b1:b.b1,w2:b.w2,b2:b.b2},meta:{...meta,ts:Date.now()}}}
+function brainFromJSON(j){return{arch:j.arch,w1:j.weights.w1,b1:j.weights.b1,w2:j.weights.w2,b2:j.weights.b2}}
+
+// ============================================================
+// AGENT + OBSERVE + TICK (same as Phase 2)
+// ============================================================
+function createAgent(maze,brain,color,gid){
+  const[sx,sy]=maze.start;return{
+    x:sx+.5,y:sy+.5,prevX:sx+.5,prevY:sy+.5,dir:0,speed:.13,turnRate:1.2,
+    alive:true,reached:false,brain:brain||null,memory:[],memorySize:24,stuckTimer:0,
+    color:color||'#5df2d6',gid:gid||0,name:'',
+  }
+}
+function observe(maze,agent){
+  const{grid,cols,rows,exit}=maze;
+  function wd(cx,cy,dx,dy,mx){for(let d=0;d<mx;d++){const tx=Math.floor(cx)+dx*d,ty=Math.floor(cy)+dy*d;if(tx<0||ty<0||tx>=cols||ty>=rows)return d/mx;if(grid[ty][tx]===1)return d/mx}return 1}
+  const mx=Math.max(cols,rows);
+  const dN=wd(agent.x,agent.y,0,-1,mx),dS=wd(agent.x,agent.y,0,1,mx),dE=wd(agent.x,agent.y,1,0,mx),dW=wd(agent.x,agent.y,-1,0,mx);
+  const dxEx=exit[0]-agent.x,dyEx=exit[1]-agent.y,distExit=Math.hypot(dxEx,dyEx)/Math.hypot(cols,rows);
+  const sn=agent.speed*5,st=Math.min(1,agent.stuckTimer/100);
+  let rec=1;const cx=Math.floor(agent.x),cy=Math.floor(agent.y);
+  for(let i=agent.memory.length-1;i>=0;i--){const[mx,my]=agent.memory[i];if(Math.floor(mx)===cx&&Math.floor(my)===cy){rec=1-(agent.memory.length-i)/agent.memory.length;break}}
+  return[dN,dS,dE,dW,distExit,sn,st,rec];
+}
+function tick(maze,agent,rng){
+  if(!agent.alive||agent.reached)return agent;
+  const a={...agent,memory:[...agent.memory]};a.prevX=a.x;a.prevY=a.y;
+  const{grid,cols,rows,exit}=maze;
+  const cx=Math.floor(a.x),cy=Math.floor(a.y);
+  if(cx===exit[0]&&cy===exit[1]){a.x=exit[0]+.5;a.y=exit[1]+.5;a.reached=true;return a}
+  a.memory.push([a.x,a.y]);if(a.memory.length>a.memorySize)a.memory.shift();
+  const obs=observe(maze,a);
+  let turn=0,move=0;
+  if(a.brain){const out=forward(a.brain,obs);turn=out[1]-out[0];move=out[2]-out[3];a._lastOutput=out}else{turn=(rng()-.5)*2;move=rng()*.5+.3;a._lastOutput=[0,0,0,0]}
+  a._lastObs=obs;
+  a.dir+=Math.max(-a.turnRate,Math.min(a.turnRate,turn*a.turnRate*.8));
+  if(move>0){a.x+=Math.cos(a.dir)*a.speed*Math.max(.1,move);a.y+=Math.sin(a.dir)*a.speed*Math.max(.1,move)}else{a.stuckTimer++}
+  const ncx=Math.floor(a.x),ncy=Math.floor(a.y);
+  if(ncx<0||ncy<0||ncx>=cols||ncy>=rows||grid[ncy][ncx]===1){a.x=a.prevX;a.y=a.prevY;a.stuckTimer++}else{a.stuckTimer=0}
+  return a;
+}
+
+// ============================================================
+// FITNESS + GA
+// ============================================================
+const POP_SIZE=50,ELITE_COUNT=5,MAX_TICKS=1500;
+function evaluateFitness(maze,brain,maxTicks,seedOffset){
+  const rng=createRNG((maze._seed||0)+(seedOffset||0));
+  let agent=createAgent(maze,brain);let ticks=0;const vc={};let rp=0;
+  while(ticks<maxTicks&&!agent.reached){agent=tick(maze,agent,rng);ticks++;const cx=Math.floor(agent.x),cy=Math.floor(agent.y);const k=`${cx},${cy}`;vc[k]=(vc[k]||0)+1;if(vc[k]>3)rp+=.01;if(agent.stuckTimer>150)break}
+  const dist=Math.hypot(maze.exit[0]-agent.x,maze.exit[1]-agent.y);
+  const prog=dist<Number.MAX_VALUE?1-Math.min(1,dist/Math.hypot(maze.exit[0]-maze.start[0],maze.exit[1]-maze.start[1])):0;
+  return prog+(agent.reached?Math.max(0,(maxTicks-ticks)/maxTicks*5)+3:0)-rp;
+}
+function runGeneration(maze,pop,gen){
+  for(const p of pop)p.fitness=evaluateFitness(maze,p.brain,MAX_TICKS,gen*POP_SIZE+p.id);
+  pop.sort((a,b)=>b.fitness-a.fitness);
+  const avg=pop.reduce((s,p)=>s+p.fitness,0)/pop.length;
+  const elites=pop.slice(0,ELITE_COUNT).map(p=>({id:p.id,brain:cloneBrain(p.brain),fitness:0}));
+  const next=[...elites];const pp=pop.slice(0,8);
+  for(let i=elites.length;i<POP_SIZE;i++){const pr=pp[Math.floor(Math.random()*pp.length)].brain;next.push({id:i,brain:mutate(pr),fitness:0})}
+  return{population:next,bestFitness:pop[0].fitness,avgFitness:avg,bestBrain:cloneBrain(pop[0].brain)};
+}
+
+// ============================================================
+// QUESTION BANK — 50 questions
+// ============================================================
+const QB=[{q:"7 × 8?",o:["54","56","64","48"],c:1},{q:"15% of 200?",o:["25","30","35","40"],c:1},{q:"√144?",o:["10","11","12","14"],c:2},{q:"2⁸?",o:["128","256","512","64"],c:1},{q:"3³+4²?",o:["43","31","25","37"],c:0},{q:"x+7=15, x=?",o:["6","7","8","9"],c:2},{q:"Circle area r=5? π≈3.14",o:["62.8","78.5","31.4","15.7"],c:1},{q:"LCM 6,8?",o:["12","24","48","16"],c:1},{q:"99×99?",o:["9701","9801","9901","9999"],c:1},{q:"Triangle ∠ sum?",o:["90°","180°","270°","360°"],c:1},{q:"2¹⁰?",o:["512","1024","2048","256"],c:1},{q:"3x-7=14, x=?",o:["5","6","7","8"],c:2},{q:"1/3+1/4?",o:["2/7","7/12","1/7","5/12"],c:1},{q:"√169?",o:["11","12","13","14"],c:2},{q:"a=3,b=4,a²+b²=?",o:["25","7","12","49"],c:0},{q:"WW2 end?",o:["1943","1944","1945","1946"],c:2},{q:"1st US Pres?",o:["Jefferson","Adams","Washington","Lincoln"],c:2},{q:"Berlin Wall?",o:["1987","1988","1989","1990"],c:2},{q:"Colosseum?",o:["Greek","Roman","Persian","Ottoman"],c:1},{q:"Penicillin?",o:["Pasteur","Fleming","Koch","Jenner"],c:1},{q:"Fr Revolution?",o:["1776","1789","1799","1804"],c:1},{q:"Art of War?",o:["Confucius","Sun Tzu","Lao Tzu","Mencius"],c:1},{q:"1912 ship?",o:["Lusitania","Britannic","Titanic","Olympic"],c:2},{q:"1st on moon?",o:["Aldrin","Armstrong","Gagarin","Glenn"],c:1},{q:"Statue Liberty?",o:["UK","Spain","France","Italy"],c:2},{q:"Magna Carta?",o:["1066","1215","1492","1688"],c:1},{q:"Capital France?",o:["London","Berlin","Paris","Madrid"],c:2},{q:"Largest continent?",o:["Africa","Asia","Europe","N.America"],c:1},{q:"Longest river?",o:["Amazon","Yangtze","Nile","Mississippi"],c:2},{q:"Continents?",o:["5","6","7","8"],c:2},{q:"Capital Japan?",o:["Seoul","Beijing","Tokyo","Bangkok"],c:2},{q:"Most people?",o:["USA","India","China","Indonesia"],c:1},{q:"Everest range?",o:["Andes","Alps","Himalayas","Rockies"],c:2},{q:"Largest ocean?",o:["Atlantic","Indian","Arctic","Pacific"],c:3},{q:"Capital Australia?",o:["Sydney","Melbourne","Canberra","Perth"],c:2},{q:"Sahara?",o:["Asia","Africa","Australia","S.America"],c:1},{q:"H₂O?",o:["Oxygen","Hydrogen","Water","Helium"],c:2},{q:"Closest to Sun?",o:["Venus","Mercury","Earth","Mars"],c:1},{q:"Plants absorb?",o:["Oxygen","Nitrogen","CO₂","Hydrogen"],c:2},{q:"Light speed?",o:["100k","200k","300k","400k"],c:2},{q:"Bones human?",o:["186","206","226","256"],c:1},{q:"DNA?",o:["Deoxyribonucleic Acid","Dinitrogen Acid","Double Nucleic Acid","Deoxyribose Nucleic"],c:0},{q:"Cell powerhouse?",o:["Nucleus","Ribosome","Mitochondria","Membrane"],c:2},{q:"Carbon atomic#?",o:["4","6","8","12"],c:1},{q:"Ground force?",o:["Magnetism","Friction","Gravity","Inertia"],c:2},{q:"Elements?",o:["92","108","118","136"],c:2}];
+function pickQ(n){const p=[...QB];for(let i=p.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]]}return p.slice(0,n)}
+
+// ============================================================
+// GHOST COLORS — 16 distinct agent colors
+// ============================================================
+const GHOST_COLORS=[
+  '#5df2d6','#ff4d9d','#ffb84d','#7be38a','#5dd3f2','#a973ff',
+  '#ff8b45','#ff5577','#fff066','#45d3ff','#ff6bd6','#8be35d',
+  '#f2a95d','#6ba3ff','#ff9e4d','#d65dff',
+];
+
+// ============================================================
+// DAILY MAZE — deterministic from date string
+// ============================================================
+function dailySeed(){
+  const d=new Date();return d.getUTCFullYear()*10000+(d.getUTCMonth()+1)*100+d.getUTCDate();
+}
+function dailyMaze(){const s=dailySeed();const m=generateMaze(21,21,s);m._seed=s;return m}
+
+// ============================================================
+// PERSISTENCE — localStorage as Firestore stand-in
+// ============================================================
+function saveRun(dateKey,runData){
+  const key=`br3_runs_${dateKey}`;
+  const runs=JSON.parse(localStorage.getItem(key)||'[]');
+  runs.push({...runData,submittedAt:Date.now()});
+  localStorage.setItem(key,JSON.stringify(runs));
+}
+function loadRuns(dateKey){return JSON.parse(localStorage.getItem(`br3_runs_${dateKey}`)||'[]')}
+function saveBrain(){localStorage.setItem('br3_brain',JSON.stringify(brainToJSON(gameState.bestBrain,{gen:gameState.totalGens,fitness:gameState.bestFitness})))}
+function loadBrain(){const d=localStorage.getItem('br3_brain');return d?brainFromJSON(JSON.parse(d)):null}
+
+// ============================================================
+// FAKE GHOSTS — generate plausible opponent runs
+// ============================================================
+function generateFakeGhosts(maze,count){
+  const ghosts=[];
+  const names=['Berok','Kestrel','Mirage','Tango','Sparx','Nova','Drift','Raze','Flux','Pixel','Glitch','Aegis','Umbra','Zephyr','Cinder'];
+  for(let i=0;i<count;i++){
+    const rng=createRNG(maze._seed+i*1000+1);
+    // Generate a "handicapped" brain — rough random weights with some bias toward exit
+    const b=makeBrain();
+    // Bias the move-forward weight slightly so ghosts don't all get stuck
+    for(let j=0;j<BRAIN_ARCH.hidden;j++)b.w2[2][j]+=.3;
+    let agent=createAgent(maze,b);
+    let ticks=0;
+    while(ticks<MAX_TICKS&&!agent.reached){agent=tick(maze,agent,rng);ticks++;if(agent.stuckTimer>300)break}
+    ghosts.push({
+      id:`ghost_${i}`,name:names[i%names.length],
+      brain,ticks,fitness:evaluateFitness(maze,b,MAX_TICKS,i*10),
+      submittedAt:Date.now()-Math.random()*3600000,
+    });
+  }
+  return ghosts;
+}
+
+// ============================================================
+// CANVAS RENDERER — multi-agent
+// ============================================================
+const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
+function rsz(){
+  const w=document.getElementById('canvasWrap'),r=w.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=r.width*dpr;canvas.height=r.height*dpr;
+  canvas.style.width=r.width+'px';canvas.style.height=r.height+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+rsz();window.addEventListener('resize',rsz);
+
+function render(maze,agents){
+  const{grid,cols,rows,exit}=maze;
+  const w=canvas.clientWidth,h=canvas.clientHeight;
+  const cw=w/cols,ch=h/rows;
+  ctx.clearRect(0,0,w,h);ctx.fillStyle='#050810';ctx.fillRect(0,0,w,h);
+  // Walls
+  ctx.fillStyle='#1c2138';
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++)if(grid[y][x]===1)ctx.fillRect(x*cw+1,y*ch+1,cw-2,ch-2);
+  // Exit glow
+  const[ex,ey]=exit;
+  ctx.fillStyle='#5df2d6';ctx.globalAlpha=.5+Math.sin(performance.now()*.005)*.3;
+  ctx.fillRect(ex*cw+2,ey*ch+2,cw-4,ch-4);ctx.globalAlpha=1;
+  // Agents
+  for(const a of agents){
+    if(!a.alive&&!a.reached)continue;
+    const px=a.x*cw,py=a.y*ch,sz=cw*.35;
+    ctx.save();ctx.translate(px,py);ctx.rotate(a.dir);
+    ctx.fillStyle=a.color||'#5df2d6';
+    ctx.beginPath();
+    ctx.moveTo(sz,0);ctx.lineTo(-sz*.6,-sz*.5);ctx.lineTo(-sz*.6,sz*.5);
+    ctx.closePath();ctx.fill();
+    ctx.restore();
+    // Label if named
+    if(a.name&&a.gid===0){
+      ctx.fillStyle='#cdd2ee';ctx.font='8px "JetBrains Mono",monospace';
+      ctx.textAlign='center';ctx.fillText(a.name,px,py-cw*.5);
+    }
+  }
+}
+
+// ============================================================
+// GAME STATE
+// ============================================================
+let gameState={
+  tokens:3,totalGens:0,bestFitness:0,bestBrain:null,
+  population:null,fitnessHistory:[],todayRun:null,
+};
+function initPop(){
+  gameState.population=Array.from({length:POP_SIZE},(_,i)=>({id:i,brain:makeBrain(),fitness:0}));
+  gameState.totalGens=0;gameState.fitnessHistory=[];gameState.bestFitness=0;
+  const saved=loadBrain();gameState.bestBrain=saved||null;
+}
+
+let runState={status:'idle',speed:2,maze:null,agents:[],tickMap:null,ghostRuns:[]};
+
+// ============================================================
+// DAILY SETUP
+// ============================================================
+const todayKey=String(dailySeed());
+const maze=dailyMaze();
+runState.maze=maze;
+initPop();
+document.getElementById('todayDate').textContent=`MAZE #${todayKey}`;
+document.getElementById('mazeInfo').textContent=`Seed: ${todayKey} · 21×21 grid`;
+
+// Load existing runs
+let allRuns=loadRuns(todayKey);
+const fakeGhosts=generateFakeGhosts(maze,14);
+gameState.ghostRuns=[...allRuns,...fakeGhosts].sort((a,b)=>b.fitness-a.fitness).slice(0,15);
+
+// Check if player already ran today
+gameState.todayRun=allRuns.find(r=>r.isPlayer);
+if(gameState.todayRun){
+  document.getElementById('runOfficialBtn').disabled=true;
+  document.getElementById('runOfficialBtn').textContent='✓ RUN SUBMITTED';
+  document.getElementById('runStatus').textContent=`${gameState.todayRun.ticks} ticks · #?`;
+}
+
+// ============================================================
+// LEADERBOARD
+// ============================================================
+function updateLeaderboard(){
+  const el=document.getElementById('leaderboard');
+  const legend=document.getElementById('ghostLegend');
+  const runs=[...(gameState.ghostRuns||[])].sort((a,b)=>b.fitness-a.fitness);
+  // Add player run if exists
+  if(gameState.todayRun){runs.unshift({...gameState.todayRun,name:'YOU',isPlayer:true})}
+
+  if(runs.length===0){el.innerHTML='<div style="font-size:10px;color:#5a608a;text-align:center;padding:12px">No runs yet. Be the first!</div>';return}
+
+  el.innerHTML=runs.map((r,i)=>{
+    const time=(r.ticks/TICK_RATE).toFixed(1)+'s';
+    const youClass=r.isPlayer?' you':'';
+    const color=r.isPlayer?'#5df2d6':(GHOST_COLORS[i%16]||'#8b91b8');
+    return `<div class="lb-row${youClass}">
+      <span class="lb-rank" style="color:${color}">#${i+1}</span>
+      <span class="lb-name">${r.isPlayer?'★ ':''}${r.name||'Ghost'}</span>
+      <span class="lb-time">${time}</span>
+      <span class="lb-fitness">${(r.fitness||0).toFixed(2)}</span>
+    </div>`;
+  }).join('');
+
+  legend.innerHTML='<span style="font-size:9px;color:#5a608a">Ghosts: </span>'+
+    runs.filter(r=>!r.isPlayer).slice(0,16).map((r,i)=>
+      `<span class="ghost-chip${r.isPlayer?' you':''}" style="border-color:${GHOST_COLORS[i%16]}">${(r.name||'?').slice(0,6)}</span>`
+    ).join('');
+}
+
+// ============================================================
+// OFFICIAL RUN — submit + race ghosts
+// ============================================================
+function submitOfficialRun(){
+  if(!gameState.bestBrain){toast('Train first!');return}
+  if(gameState.todayRun){toast('Already submitted today');return}
+
+  const rng=createRNG(maze._seed+9999);
+  let agent=createAgent(maze,gameState.bestBrain,'#5df2d6',0);
+  agent.name='YOU';
+  let ticks=0;
+  const trace=[{x:agent.x,y:agent.y,dir:agent.dir}];
+  while(ticks<MAX_TICKS&&!agent.reached){agent=tick(maze,agent,rng);ticks++;if(ticks%3===0)trace.push({x:agent.x,y:agent.y,dir:agent.dir});}
+  const fitness=evaluateFitness(maze,gameState.bestBrain,MAX_TICKS,9999);
+
+  gameState.todayRun={id:'player',name:'YOU',brain:gameState.bestBrain,ticks,fitness,trace,isPlayer:true,submittedAt:Date.now()};
+  saveRun(todayKey,gameState.todayRun);
+
+  document.getElementById('runOfficialBtn').disabled=true;
+  document.getElementById('runOfficialBtn').textContent='✓ SUBMITTED';
+  document.getElementById('runStatus').textContent=`${ticks} ticks · ${(ticks/TICK_RATE).toFixed(1)}s`;
+
+  // Build ghost race
+  startGhostRace(gameState.todayRun);
+  updateLeaderboard();
+  toast(`Run submitted! ${(ticks/TICK_RATE).toFixed(1)}s · Check the leaderboard`);
+}
+
+// ============================================================
+// GHOST RACE — all agents on screen simultaneously
+// ============================================================
+function startGhostRace(playerRun){
+  const agents=[];
+  // Player agent first
+  const pa=createAgent(maze,playerRun.brain,GHOST_COLORS[0],0);
+  pa.name='YOU';pa.alive=true;pa.reached=false;
+  agents.push(pa);
+
+  // Ghost agents
+  const ghosts=(gameState.ghostRuns||[]).slice(0,15);
+  ghosts.forEach((r,i)=>{
+    const ga=createAgent(maze,r.brain,GHOST_COLORS[(i+1)%16],i+1);
+    ga.name=(r.name||'?').slice(0,6);ga.alive=true;ga.reached=false;
+    agents.push(ga);
+  });
+
+  runState.agents=agents;
+  runState.tickMap=agents.map(()=>createRNG(maze._seed+1000));
+  runState.status='racing';
+  runState.speed=3;
+  runState.tickCount=0;
+  document.getElementById('hudState').textContent='RACING';
+  document.getElementById('hudInfo').textContent=`${agents.length} agents · 0 ticks`;
+}
+
+// ============================================================
+// TRAINING (same as Phase 2)
+// ============================================================
+async function trainGenerations(count){
+  if(runState.status==='racing')return;
+  for(let g=0;g<count;g++){
+    if(gameState.tokens<=0)break;gameState.tokens--;
+    const res=await runOneGen();
+    gameState.population=res.population;
+    gameState.bestFitness=res.bestFitness;gameState.totalGens++;
+    gameState.fitnessHistory.push(res.bestFitness);
+    if(gameState.fitnessHistory.length>100)gameState.fitnessHistory.shift();
+    if(!gameState.bestBrain||res.bestFitness>(gameState._pb||0)){gameState.bestBrain=cloneBrain(res.bestBrain);gameState._pb=res.bestFitness;saveBrain()}
+    updateUI();drawFitnessChart();
+    await new Promise(r=>setTimeout(r,20));
+  }
+  document.getElementById('trainProgress').textContent='ready';
+  document.getElementById('runOfficialBtn').disabled=!gameState.bestBrain||!!gameState.todayRun;
+  updateUI();
+}
+function runOneGen(){return new Promise(r=>setTimeout(()=>r(runGeneration(runState.maze,gameState.population,gameState.totalGens)),0))}
+
+// ============================================================
+// QUIZ
+// ============================================================
+let cq=[],qi=0,qs=0;
+function resetQuiz(){qi=0;qs=0;cq=pickQ(5);renderQuiz()}
+function renderQuiz(){
+  const el=document.getElementById('quizContent');
+  if(qi>=cq.length){el.innerHTML=`<div class="quiz-feedback" style="color:#5df2d6">+${qs} tokens!</div><button class="btn btn--sm" style="margin-top:8px" onclick="newQuiz()">New quiz</button>`;return}
+  const q=cq[qi];el.innerHTML=`<div class="quiz-q">${q.q}</div><div class="quiz-opts">${q.o.map((o,i)=>`<button class="quiz-opt" data-idx="${i}">${String.fromCharCode(65+i)}) ${o}</button>`).join('')}</div><div class="quiz-feedback" id="qf"></div>`;
+  el.querySelectorAll('.quiz-opt').forEach(b=>{b.addEventListener('click',()=>{
+    const idx=parseInt(b.dataset.idx),correct=idx===cq[qi].c,fb=document.getElementById('qf');
+    el.querySelectorAll('.quiz-opt').forEach(b=>{b.disabled=true;const i=parseInt(b.dataset.idx);if(i===cq[qi].c)b.classList.add('correct');else if(i===idx&&!correct)b.classList.add('wrong')});
+    if(correct){qs++;gameState.tokens++}fb.textContent=correct?'Correct! +1 token':'Incorrect.';fb.style.color=correct?'#5df2d6':'#ff4d9d';
+    setTimeout(()=>{qi++;renderQuiz();updateUI()},800);
+  })})}
+function newQuiz(){qi=0;qs=0;cq=pickQ(5);renderQuiz()}
+
+// ============================================================
+// FITNESS CHART
+// ============================================================
+function drawFitnessChart(){
+  const c=document.getElementById('fitnessChart'),dpr=window.devicePixelRatio||1;
+  const w=c.clientWidth,h=c.clientHeight;if(c.width!==w*dpr){c.width=w*dpr;c.height=h*dpr}
+  const c2=c.getContext('2d');c2.setTransform(dpr,0,0,dpr,0,0);c2.clearRect(0,0,w,h);
+  const hist=gameState.fitnessHistory;if(hist.length<2)return;
+  const lo=Math.min(...hist,0),hi=Math.max(...hist,lo+.1),span=hi-lo;
+  c2.fillStyle='rgba(93,242,214,.1)';c2.beginPath();
+  hist.forEach((v,i)=>{const x=(i/Math.max(1,hist.length-1))*w,y=h-((v-lo)/span)*h;if(i===0)c2.moveTo(x,y);else c2.lineTo(x,y)});
+  c2.lineTo(w,h);c2.lineTo(0,h);c2.closePath();c2.fill();
+  c2.strokeStyle='#5df2d6';c2.lineWidth=1.5;c2.beginPath();
+  hist.forEach((v,i)=>{const x=(i/Math.max(1,hist.length-1))*w,y=h-((v-lo)/span)*h;if(i===0)c2.moveTo(x,y);else c2.lineTo(x,y)});
+  c2.stroke();
+}
+
+// ============================================================
+// UI UPDATE
+// ============================================================
+function updateUI(){
+  document.getElementById('tokenCount').textContent=gameState.tokens;
+  document.getElementById('lineageInfo').textContent=`gen ${gameState.totalGens} · fit ${gameState.bestFitness.toFixed(2)}`;
+  document.getElementById('genBar').style.width=Math.min(100,gameState.totalGens*2)+'%';
+  document.getElementById('brainInfo').innerHTML=`8→8→4 · ~100w<br/>gen ${gameState.totalGens} · fit ${gameState.bestFitness.toFixed(2)}`;
+  document.getElementById('runOfficialBtn').disabled=!gameState.bestBrain||!!gameState.todayRun;
+  document.getElementById('replayBestBtn').disabled=!gameState.bestBrain;
+  if(!!gameState.todayRun){document.getElementById('runOfficialBtn').textContent='✓ SUBMITTED';document.getElementById('runOfficialBtn').disabled=true}
+}
+
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2000)}
+
+// ============================================================
+// EVENT HANDLERS
+// ============================================================
+document.getElementById('trainBtn').addEventListener('click',()=>{if(gameState.tokens<=0){toast('No tokens! Do a quiz.');return}document.getElementById('trainProgress').textContent='training…';trainGenerations(1)});
+document.getElementById('train10Btn').addEventListener('click',()=>{if(gameState.tokens<=0){toast('No tokens!');return}document.getElementById('trainProgress').textContent='training 10…';trainGenerations(10)});
+document.getElementById('trainAllBtn').addEventListener('click',()=>{if(gameState.tokens<=0){toast('No tokens!');return}document.getElementById('trainProgress').textContent=`training ${gameState.tokens}…`;trainGenerations(gameState.tokens)});
+document.getElementById('runOfficialBtn').addEventListener('click',submitOfficialRun);
+document.getElementById('replayBestBtn').addEventListener('click',()=>{
+  if(!gameState.bestBrain)return;
+  const a=createAgent(runState.maze,gameState.bestBrain,'#5df2d6',0);a.name='YOU';
+  runState.agents=[a];runState.tickMap=[createRNG(maze._seed+100)];runState.status='replay';runState.speed=3;runState.tickCount=0;
+  runState.ghostRuns=[];
+  document.getElementById('hudState').textContent='REPLAY';
+  document.getElementById('hudInfo').textContent='1 agent';
+  toast('Replaying best brain');
+});
+document.getElementById('shareBtn').addEventListener('click',()=>{const t=`🧠 Daily maze #${todayKey} · My brain: gen ${gameState.totalGens}, fit ${gameState.bestFitness.toFixed(2)} — Brainwork Royale`;navigator.clipboard.writeText(t).then(()=>toast('Copied!'))});
+
+// ============================================================
+// GAME LOOP — multi-agent
+// ============================================================
+const TICK_RATE=30,TICK_MS=1000/TICK_RATE;
+let lt=0,ta=0;
+
+function gameLoop(ts){
+  requestAnimationFrame(gameLoop);
+  if(runState.status==='racing'||runState.status==='replay'){
+    if(lt===0)lt=ts;const el=ts-lt;lt=ts;ta+=el*runState.speed;
+    while(ta>=TICK_MS&&runState.agents.some(a=>a.alive&&!a.reached)){
+      ta-=TICK_MS;
+      for(let i=0;i<runState.agents.length;i++){
+        const a=runState.agents[i];
+        if(!a.alive||a.reached)continue;
+      runState.agents[i]=tick(runState.maze,a,runState.tickMap[i]);
+      if(runState.agents[i].reached){document.getElementById('hudState').classList.add('mint')}
+      }
+      runState.tickCount++;
+      const alive=runState.agents.filter(a=>a.alive&&!a.reached);
+      if(alive.length===0){runState.status='done';toast('Race complete!')}
+      document.getElementById('hudInfo').textContent=`${alive.length+runState.agents.filter(a=>a.reached).length} agents · ${runState.tickCount} ticks`;
+    }
+  }else{lt=0;ta=0}
+  if(runState.maze)render(runState.maze,runState.agents.length?runState.agents:[createAgent(runState.maze,gameState.bestBrain||null)]);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+resetQuiz();
+updateLeaderboard();
+updateUI();
+drawFitnessChart();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
