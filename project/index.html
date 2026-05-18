@@ -773,10 +773,11 @@
         <a class="nav__link" href="#classes">Classes</a>
         <a class="nav__link" href="#lab">Character Lab</a>
         <a class="nav__link" href="app.html">Demo →</a>
+        <a class="nav__link" href="https://github.com/masta-kaii/Brainwork-Royale" target="_blank" rel="noopener">GitHub ↗</a>
       </nav>
       <div class="nav__cta">
         <button class="btn btn--ghost" data-modal="signin">Sign in</button>
-        <button class="btn btn--primary" data-modal="signup">Get started</button>
+        <button class="btn btn--ghost" id="reserveBtn">Get notified</button>
       </div>
     </div>
   </header>
@@ -786,11 +787,11 @@
     <section class="hero">
       <div class="hero__copy">
         <div class="hero__pre">
-          <span class="chip__dot"></span> Closed beta · S03 begins May 24
+          <span class="chip__dot"></span> Devlog · pre-alpha
         </div>
         <h1 class="hero__title">Train the brain.<br/><em>Win the maze.</em></h1>
         <p class="hero__sub">
-          A browser-based AI battle royale where the habits you build in real life — what you study, how much you move, how focused you stay — train an evolving neural network that fights for you. You don't control the character. You raise it.
+          A browser-based AI evolution game. Train a neural network through daily habits, then watch it race against other brains in procedural mazes. In active development.
         </p>
 
         <!-- Inline login -->
@@ -1039,21 +1040,21 @@
     <section class="section" style="padding-top: 24px">
       <div class="cta">
         <div>
-          <h2 class="cta__title">The beta opens in <span id="countdown" style="color:var(--mint)">--</span>.</h2>
-          <p class="cta__sub">No credit card. Free for the first 5,000 wardens. Brings your AI, your quests, your replays — across desktop, tablet and mobile.</p>
+          <h2 class="cta__title">In active development — follow along.</h2>
+          <p class="cta__sub">No launch date. No fake waitlist. Just a solo dev building in the open. Drop your email to get notified when the alpha goes live.</p>
         </div>
         <div class="cta__actions">
-          <button class="btn btn--primary" id="reserveBtn">Reserve a slot</button>
+          <a class="btn btn--primary" href="https://github.com/masta-kaii/Brainwork-Royale" target="_blank" rel="noopener">View on GitHub</a>
           <a class="btn btn--ghost" href="app.html">Try the demo</a>
         </div>
       </div>
-      <!-- Waitlist form (hidden until Reserve clicked) -->
+      <!-- Email signup (no fake waitlist numbers, just a notification list) -->
       <div id="waitlistForm" style="display:none; margin-top:20px; padding:24px; background:var(--bg-1); border:1px solid var(--line); border-radius:var(--r-xl); max-width:520px">
-        <div style="font-family:var(--font-display); font-size:14px; font-weight:700; color:var(--ink-0); margin-bottom:6px">RESERVE YOUR WARDEN SLOT</div>
-        <div style="font-size:12px; color:var(--ink-2); margin-bottom:16px">Enter your email. You'll get a confirmation when the beta opens.</div>
+        <div style="font-family:var(--font-display); font-size:14px; font-weight:700; color:var(--ink-0); margin-bottom:6px">GET NOTIFIED WHEN ALPHA GOES LIVE</div>
+        <div style="font-size:12px; color:var(--ink-2); margin-bottom:16px">I'll email you exactly once — when the game is ready for real players.</div>
         <div style="display:flex; gap:8px">
-          <input id="waitlistEmail" type="email" placeholder="warden@brainwork.gg" style="flex:1; padding:11px 14px; background:var(--bg-0); border:1px solid var(--line); border-radius:10px; color:var(--ink-0); font-size:14px; font-family:var(--font-body)" />
-          <button class="btn btn--primary" id="waitlistSubmit">COUNT ME IN →</button>
+          <input id="waitlistEmail" type="email" placeholder="you@email.com" style="flex:1; padding:11px 14px; background:var(--bg-0); border:1px solid var(--line); border-radius:10px; color:var(--ink-0); font-size:14px; font-family:var(--font-body)" />
+          <button class="btn btn--primary" id="waitlistSubmit">NOTIFY ME →</button>
         </div>
         <div id="waitlistMsg" style="margin-top:12px; font-size:11px; font-family:var(--font-display); color:var(--mint); min-height:20px"></div>
       </div>
@@ -1062,10 +1063,8 @@
     <footer class="footer">
       <div>© 2026 Brainwork Royale · Solo dev, built in the open.</div>
       <div style="display: flex; gap: 14px">
-        <a href="#">Privacy</a>
-        <a href="#">Terms</a>
-        <a href="#">Discord</a>
-        <a href="#">Changelog</a>
+        <a href="https://github.com/masta-kaii/Brainwork-Royale" target="_blank" rel="noopener">GitHub</a>
+        <a href="app.html">Demo</a>
       </div>
     </footer>
   </main>

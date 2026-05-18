@@ -1,0 +1,36 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax:
+    name: Syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check JS syntax
+        run: |
+          echo "Checking .js files..."
+          for f in $(find . -name "*.js" -not -path "*/node_modules/*" -not -path "*/.git/*"); do
+            node --check "$f" || exit 1
+          done
+          echo "All .js files pass syntax check."
+      - name: Check HTML balance
+        run: |
+          echo "Checking HTML script tags..."
+          for f in project/index.html project/app.html; do
+            opens=$(grep -c '<script' "$f" || true)
+            closes=$(grep -c '</script>' "$f" || true)
+            if [ "$opens" != "$closes" ]; then
+              echo "ERROR: $f has $opens <script> opens but $closes </script> closes"
+              exit 1
+            fi
+            echo "$f: $opens script tags balanced"
+          done
