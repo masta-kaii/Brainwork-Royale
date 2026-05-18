@@ -18,7 +18,10 @@ function snapSim(sim) {
 
 function BattleScreen({ ai, seed, mode = "battle", onReseed, onToast, onMatchComplete }) {
   const isRace = mode === "race";
-  const labels = isRace
+  const isDaily = mode === "daily";
+  const labels = isDaily
+    ? { live: "DAILY", arena: "DAILY MAZE", header: "Daily Maze", id: "D", treasure: "FIRST TO EXIT", lastAlive: "LAST AI STANDING", queueNext: "↻ Queue next maze", matchPrefix: "DAILY · Maze" }
+    : isRace
     ? { live: "RACE", arena: "RACE TRACK", header: "Race", id: "R", treasure: "FIRST ACROSS LINE", lastAlive: "LAST RUNNER STANDING", queueNext: "↻ Queue next race", matchPrefix: "RACE" }
     : { live: "LIVE",  arena: "NEON LAB",   header: "Battle", id: "M", treasure: "TREASURE SECURED", lastAlive: "LAST AI STANDING", queueNext: "↻ Queue next match", matchPrefix: "LIVE · Match" };
 
@@ -49,14 +52,21 @@ function BattleScreen({ ai, seed, mode = "battle", onReseed, onToast, onMatchCom
     if (!stageRef.current) return;
 
     // sim — pass bot brains so opposing agents also get speed boosts
-    const BOT_BRAIN_COUNT = 7;
-    const botBrains = Array.from({ length: BOT_BRAIN_COUNT }, (_, i) => {
-      // Seed each bot brain slightly differently so they have varied gaits
-      return window.brainEngine?.makeBrain?.(window.brainEngine?.DEFAULT_ARCH) || null;
-    });
-    const sim = isRace
-      ? createRaceSim(seed, ai, { botBrains })
-      : createBattleSim(seed, ai, { botBrains });
+    let sim;
+    if (isDaily) {
+      // Daily maze: deterministic from date, ghost opponents from Firestore or local
+      const dailyKey = window.dailyMazeSeed?.() || String(new Date().getFullYear() * 10000 + (new Date().getMonth() + 1) * 100 + new Date().getDate());
+      const ghostRuns = (ai._ghostRuns || []).map(r => r.brainWeights || r.brain);
+      sim = createDailySim(ai, ghostRuns);
+    } else {
+      const BOT_BRAIN_COUNT = 7;
+      const botBrains = Array.from({ length: BOT_BRAIN_COUNT }, () =>
+        window.brainEngine?.makeBrain?.(window.brainEngine?.DEFAULT_ARCH) || null
+      );
+      sim = isRace
+        ? createRaceSim(seed, ai, { botBrains })
+        : createBattleSim(seed, ai, { botBrains });
+    }
     simRef.current = sim;
     completedRef.current = false;
 

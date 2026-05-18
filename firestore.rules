@@ -141,5 +141,14 @@ service cloud.firestore {
       allow create: if false;
       allow write: if false;
     }
+
+    // ---------- /dailyRuns/{dateKey}/runs/{uid} ----------
+    // Ghost race daily runs — owners write their own, anyone reads
+    match /dailyRuns/{dateKey}/runs/{uid} {
+      allow read: if isSignedIn() || isAdmin();
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid);
+      allow delete: if isAdmin();
+    }
   }
 }

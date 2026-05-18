@@ -337,6 +337,35 @@ async function deleteBrain(uid, key) {
   } catch (e) { warn(`deleteBrain(${key})`, e); }
 }
 
+// ---- Daily maze runs ----
+function dailyRunRef(uid, dateKey) {
+  const f = fb();
+  return f.doc(f.db, "dailyRuns", dateKey, "runs", uid);
+}
+function dailyRunsCol(dateKey) {
+  const f = fb();
+  return f.collection(f.db, "dailyRuns", dateKey, "runs");
+}
+async function saveDailyRun(uid, dateKey, runData) {
+  try {
+    const f = fb();
+    await f.setDoc(dailyRunRef(uid, dateKey), {
+      ...runData,
+      submittedAt: f.serverTimestamp(),
+    });
+  } catch (e) { warn("saveDailyRun", e); }
+}
+async function loadDailyRuns(dateKey, limitCount = 20) {
+  try {
+    const f = fb();
+    const { query, orderBy, limit } = f;
+    const snap = await f.getDocs(
+      query(dailyRunsCol(dateKey), orderBy("fitness", "desc"), limit(limitCount))
+    );
+    return snap.docs.map(d => d.data());
+  } catch (e) { warn("loadDailyRuns", e); return []; }
+}
+
 // ============================================================
 // Expose
 // ============================================================
@@ -356,4 +385,6 @@ window.dataLayer = {
   saveBrain,
   loadBrain,
   deleteBrain,
+  saveDailyRun,
+  loadDailyRuns,
 };

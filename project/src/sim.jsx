@@ -511,6 +511,41 @@ function createRaceSim(seed, you, extraOpts = {}) {
   });
 }
 
+// Daily maze factory — deterministic from UTC date, uses ghost opponents.
+// Ghosts are loaded from Firestore (or simulated locally if none exist).
+function createDailySim(you, ghostRuns) {
+  const seed = dailyMazeSeed();
+  const cols = 21, rows = 21;
+  const maze = genMaze(cols, rows, seed);
+  maze._seed = seed;
+
+  // Build ghost brains from stored runs
+  const ghostBrains = (ghostRuns || []).map(r => {
+    try { return window.brainEngine?.brainFromJSON?.(r) || null; }
+    catch (e) { return null; }
+  }).filter(Boolean);
+
+  // Fill remaining slots with random bot brains
+  const numGhosts = Math.max(1, Math.min(15, ghostBrains.length || 7));
+  const botBrains = Array.from({ length: numGhosts }, (_, i) =>
+    ghostBrains[i] || window.brainEngine?.makeBrain?.(window.brainEngine?.DEFAULT_ARCH) || null
+  );
+
+  return createBattleSim(seed, you, {
+    cols, rows,
+    mazeGen: (c, r, s) => maze,
+    numAgents: botBrains.length + 1,
+    spawnPool: defaultBattleSpawns(cols, rows),
+    botBrains,
+  });
+}
+
+// Daily maze seed from UTC date (same for all players)
+function dailyMazeSeed() {
+  const d = new Date();
+  return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+}
+
 // Run a sim to completion (or maxTicks) and produce a replay record:
 // - per-tick snapshots of every agent's pos/hp/state
 function buildReplay(seed, you, maxTicks = 800) {
@@ -548,6 +583,7 @@ function buildReplay(seed, you, maxTicks = 800) {
 
 Object.assign(window, {
   genMaze, genRaceTrack, bfsPath,
-  createBattleSim, createRaceSim,
+  createBattleSim, createRaceSim, createDailySim,
+  dailyMazeSeed,
   buildReplay,
 });

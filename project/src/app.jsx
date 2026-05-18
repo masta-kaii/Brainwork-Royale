@@ -35,6 +35,7 @@ function App({ user, initialState }) {
   const [brains, setBrains] = useState(initialState.brains || {});
   const [toast, setToast] = useState(null);
   const [battleSeed, setBattleSeed] = useState(8201);
+  const [dailyGhosts, setDailyGhosts] = useState([]);
   const [replays, setReplays] = useState(() => buildSeedReplays(initialState.character, initialState.brains));
   const [classModal, setClassModal] = useState(false);
 
@@ -210,6 +211,7 @@ function App({ user, initialState }) {
     { id: "quests", label: "Quests", glyph: "★", count: quests.filter(q => q.progress < q.target).length },
     { id: "training", label: "Training", glyph: "✦", count: masteredCount > 0 ? `${masteredCount}★` : null },
     { id: "battle", label: "Battle", glyph: "▶", count: "LIVE", live: true },
+    { id: "daily", label: "Daily Maze", glyph: "🗓", count: "1/day", live: true },
     { id: "race", label: "Race", glyph: "»", count: "LIVE", live: true },
     { id: "replays", label: "Replays", glyph: "◷", count: replays.length },
     { id: "brain", label: "Brain", glyph: "❖", count: `G${ai.generation}` },
@@ -285,6 +287,16 @@ function App({ user, initialState }) {
                 setBattleSeed(Math.floor(Math.random() * 90000) + 1000);
                 setTab("battle");
               }}
+              onStartDaily={() => {
+                const dateKey = window.dailyMazeSeed?.() || String(new Date().getFullYear() * 10000 + (new Date().getMonth() + 1) * 100 + new Date().getDate());
+                window.dataLayer?.loadDailyRuns?.(dateKey).then(runs => {
+                  setDailyGhosts(runs || []);
+                  setTab("daily");
+                }).catch(() => {
+                  setDailyGhosts([]);
+                  setTab("daily");
+                });
+              }}
             />
           )}
           {tab === "quests" && (
@@ -324,6 +336,31 @@ function App({ user, initialState }) {
               onReseed={() => setBattleSeed((s) => s + 1)}
               onToast={showToast}
               onMatchComplete={onMatchComplete}
+            />
+          )}
+          {tab === "daily" && (
+            <BattleScreen
+              ai={{ ...aiWithSkills, _ghostRuns: dailyGhosts }}
+              seed={window.dailyMazeSeed?.() || 20260518}
+              mode="daily"
+              onReseed={() => {}}
+              onToast={showToast}
+              onMatchComplete={(replay) => {
+                onMatchComplete(replay);
+                // Save daily run to Firestore
+                const dateKey = window.dailyMazeSeed?.() || String(new Date().getFullYear() * 10000 + (new Date().getMonth() + 1) * 100 + new Date().getDate());
+                const playerAgent = replay.agents?.find(a => a.isYou);
+                const placement = replay.agents
+                  ? replay.agents.filter(a => a.alive !== false).sort((a, b) => (b.hp || 0) - (a.hp || 0)).findIndex(a => a.isYou) + 1
+                  : "?";
+                window.dataLayer?.saveDailyRun?.(uid, dateKey, {
+                  name: ai.name, class: ai.class,
+                  ticks: replay.totalTicks, placement,
+                  fitness: playerAgent?.hp || 0,
+                  brainWeights: ai.brain ? window.brainEngine?.brainToJSON?.(ai.brain) : null,
+                });
+                showToast(`Daily run saved · placed #${placement}`);
+              }}
             />
           )}
           {tab === "race" && (
