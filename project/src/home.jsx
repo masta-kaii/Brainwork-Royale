@@ -323,26 +323,6 @@ function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest, onStartBatt
                 );
               })}
             </div>
-              <div className="card__title" style={{ fontSize: 14, marginBottom: 4 }}>
-                Neon Lab · Tier {ai.tier}
-              </div>
-              <div className="mono tiny" style={{ color: "var(--ink-2)" }}>
-                Survived 2:14 · 3 KOs · Treasure secured
-              </div>
-              <div className="row" style={{ marginTop: 10, gap: 4 }}>
-                {[80, 60, 90, 40, 30, 70, 50, 65, 75, 55, 85, 45].map((h, i) => (
-                  <div key={i} style={{
-                    flex: 1, height: 28, background: "var(--bg-3)",
-                    borderRadius: 2, position: "relative", overflow: "hidden",
-                  }}>
-                    <div style={{
-                      position: "absolute", bottom: 0, left: 0, right: 0, height: `${h}%`,
-                      background: i % 3 === 0 ? "var(--mint)" : "var(--ink-3)",
-                    }} />
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </div>
