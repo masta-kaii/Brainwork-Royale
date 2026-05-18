@@ -122,8 +122,8 @@ function _capsuleBody(world, x, y, z, halfHeight, radius, density = 1.0) {
   // without changing the brain's torque interface.
   const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
-    .setLinearDamping(0.3)
-    .setAngularDamping(1.6);
+    .setLinearDamping(0.4)
+    .setAngularDamping(1.2);
   const body = world.createRigidBody(bodyDesc);
   const colDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius)
     .setDensity(density)
@@ -138,18 +138,19 @@ function _capsuleBody(world, x, y, z, halfHeight, radius, density = 1.0) {
 // 6 joints: 2 hips + 2 knees (brain-driven), 2 ankles (passive, dangle).
 function createRagdoll(world, originX = 0, originZ = 0) {
   const RAPIER = window.RAPIER;
-  // Body proportions (metres)
-  const TORSO_HALF = 0.30, TORSO_R = 0.16;
-  const THIGH_HALF = 0.22, THIGH_R = 0.10;
-  const SHIN_HALF  = 0.20, SHIN_R  = 0.09;
-  const FOOT_HALF  = 0.10, FOOT_R  = 0.05;     // small flat foot, NEW
+  // PEP-Smol proportions — short, wide, chubby bear
+  const TORSO_HALF = 0.26, TORSO_R = 0.22;
+  const THIGH_HALF = 0.16, THIGH_R = 0.12;
+  const SHIN_HALF  = 0.15, SHIN_R  = 0.11;
+  const FOOT_HALF  = 0.08, FOOT_R  = 0.07;
+  const HIP_DX  = 0.16; // slightly wider stance
+
   // Vertical positions for spawn pose (legs straight, torso upright)
-  const FOOT_Y  = FOOT_R + 0.01;                                      // foot rests on ground
-  const SHIN_Y  = FOOT_Y + FOOT_R + SHIN_HALF + SHIN_R + 0.01;        // shin sits above the foot
-  const THIGH_Y = SHIN_Y + SHIN_HALF + SHIN_R + THIGH_HALF + THIGH_R; // thigh above shin
+  const FOOT_Y  = FOOT_R + 0.01;
+  const SHIN_Y  = FOOT_Y + FOOT_R + SHIN_HALF + SHIN_R + 0.01;
+  const THIGH_Y = SHIN_Y + SHIN_HALF + SHIN_R + THIGH_HALF + THIGH_R;
   const HIP_Y   = THIGH_Y + THIGH_HALF + THIGH_R;
   const TORSO_Y = HIP_Y + TORSO_HALF + TORSO_R;
-  const HIP_DX  = 0.13; // horizontal offset for each leg
 
   const torso  = _capsuleBody(world, originX,           TORSO_Y, originZ, TORSO_HALF, TORSO_R, 1.2);
   const lThigh = _capsuleBody(world, originX - HIP_DX,  THIGH_Y, originZ, THIGH_HALF, THIGH_R, 1.0);
@@ -169,7 +170,7 @@ function createRagdoll(world, originX = 0, originZ = 0) {
     const axis = { x: 1, y: 0, z: 0 };
     const desc = RAPIER.JointData.revolute(anchor1, anchor2, axis);
     const j = world.createImpulseJoint(desc, torso, thigh, true);
-    j.setLimits(-0.9, 0.9);                                                // tightened from ±1.4 — less reckless swing
+    j.setLimits(-1.0, 1.0);
     return j;
   }
   function mkKnee(thigh, shin) {
@@ -178,17 +179,16 @@ function createRagdoll(world, originX = 0, originZ = 0) {
     const axis = { x: 1, y: 0, z: 0 };
     const desc = RAPIER.JointData.revolute(anchor1, anchor2, axis);
     const j = world.createImpulseJoint(desc, thigh, shin, true);
-    j.setLimits(-0.05, 1.8);                                               // tightened from 2.4 — knee can't fold flat
+    j.setLimits(-0.05, 1.6);
     return j;
   }
   function mkAnkle(shin, foot) {
-    // Foot pivots horizontally so it can rest flat as the shin tilts.
-    const anchor1 = { x: 0, y: -SHIN_HALF - SHIN_R, z: 0 };                // bottom of shin
-    const anchor2 = { x: 0, y:  FOOT_R,             z: -0.02 };            // top-back of foot
+    const anchor1 = { x: 0, y: -SHIN_HALF - SHIN_R, z: 0 };
+    const anchor2 = { x: 0, y:  FOOT_R,             z: -0.02 };
     const axis = { x: 1, y: 0, z: 0 };
     const desc = RAPIER.JointData.revolute(anchor1, anchor2, axis);
     const j = world.createImpulseJoint(desc, shin, foot, true);
-    j.setLimits(-0.45, 0.45);                                              // ±25° passive sway
+    j.setLimits(-0.5, 0.5);
     return j;
   }
 
@@ -203,8 +203,8 @@ function createRagdoll(world, originX = 0, originZ = 0) {
     bodies: { torso, lThigh, rThigh, lShin, rShin, lFoot, rFoot },
     joints: { lHip, rHip, lKnee, rKnee, lAnkle, rAnkle },
     spawnY: TORSO_Y,
-    feetY: FOOT_Y - FOOT_R - 0.02,     // bottom of feet (ground level)
-    torsoToFeet: TORSO_Y - (FOOT_Y - FOOT_R - 0.02), // ~1.4m
+    feetY: FOOT_Y - FOOT_R - 0.02,
+    torsoToFeet: TORSO_Y - (FOOT_Y - FOOT_R - 0.02),
     torsoHalf: TORSO_HALF,
     torsoRadius: TORSO_R,
     thighHalf: THIGH_HALF,
@@ -239,10 +239,27 @@ const TRACE_EVERY = 3;
 function makeWorld() {
   const RAPIER = window.RAPIER;
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-  const groundDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.05, 0);
-  const ground = world.createRigidBody(groundDesc);
-  const groundCol = RAPIER.ColliderDesc.cuboid(20, 0.05, 20).setFriction(0.95);
-  world.createCollider(groundCol, ground);
+
+  const ROOM_W = 6, ROOM_D = 6, ROOM_H = 3;
+  const WALL_THICK = 0.3;
+
+  // Solid floor
+  const floorBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.15, 0));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(ROOM_W, 0.15, ROOM_D).setFriction(0.95), floorBody);
+
+  // Walls — four sides
+  const wall1 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, ROOM_H / 2, -ROOM_D));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(ROOM_W, ROOM_H / 2, WALL_THICK).setFriction(0.5), wall1);
+
+  const wall2 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, ROOM_H / 2, ROOM_D));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(ROOM_W, ROOM_H / 2, WALL_THICK).setFriction(0.5), wall2);
+
+  const wall3 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(-ROOM_W, ROOM_H / 2, 0));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(WALL_THICK, ROOM_H / 2, ROOM_D).setFriction(0.5), wall3);
+
+  const wall4 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(ROOM_W, ROOM_H / 2, 0));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(WALL_THICK, ROOM_H / 2, ROOM_D).setFriction(0.5), wall4);
+
   return world;
 }
 

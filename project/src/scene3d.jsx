@@ -1288,8 +1288,8 @@ function mountRagdollScene(container) {
     controls.enablePan = false;
     controls.target.set(0, 0.9, 0);
   }
-  camera.position.set(2.4, 1.6, 3.2);
-  camera.lookAt(0, 0.9, 0);
+  camera.position.set(3.5, 2.0, 5.0);
+  camera.lookAt(0, 1.0, 0);
 
   scene.add(new THREE.AmbientLight(0x3a4060, 0.55));
   const sun = new THREE.DirectionalLight(0xfff2dc, 1.05);
@@ -1304,47 +1304,65 @@ function mountRagdollScene(container) {
   scene.add(accent);
 
   // ============================================================
-  // Solid training stage — raised platform + surrounding void floor.
-  // The physics ground (in brain-engine.makeWorld) is a big cuboid at
-  // y=-0.05; these are the VISIBLE meshes that sell "you're on a stage".
-  // Bigger now so Walk env path (target up to z=+7) fits visibly.
+  // TRAINING ROOM — solid floor + 4 walls matching physics world.
+  // The physics room is 6×6m with 3m walls. These are the visual meshes.
   // ============================================================
-  const PLATFORM_R = 6;
-  const PLATFORM_H = 0.15;
+  const ROOM_W = 6, ROOM_D = 6, ROOM_H = 3;
+  const WALL_THICK = 0.3;
 
-  // Void floor — large, dark, sits below platform level. Suggests "if
-  // you fall off, you go down forever" (visually only; physics ground
-  // catches them).
-  const voidFloor = new THREE.Mesh(
-    new THREE.CircleGeometry(16, 64),
-    new THREE.MeshStandardMaterial({ color: 0x05060c, roughness: 1.0, metalness: 0 })
-  );
-  voidFloor.rotation.x = -Math.PI / 2;
-  voidFloor.position.y = -0.3;
-  voidFloor.receiveShadow = true;
-  scene.add(voidFloor);
+  // Solid floor
+  const floorGeo = new THREE.PlaneGeometry(ROOM_W * 2 + WALL_THICK * 2, ROOM_D * 2 + WALL_THICK * 2);
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1f3a, roughness: 0.8, metalness: 0.1, emissive: 0x080c18, emissiveIntensity: 0.3 });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.15;
+  floor.receiveShadow = true;
+  scene.add(floor);
 
-  // Raised platform — actual training surface
-  const platform = new THREE.Mesh(
-    new THREE.CylinderGeometry(PLATFORM_R, PLATFORM_R, PLATFORM_H, 48),
-    new THREE.MeshStandardMaterial({
-      color: 0x1d2747, roughness: 0.75, metalness: 0.15,
-      emissive: 0x0d1430, emissiveIntensity: 0.4,
-    })
-  );
-  platform.position.y = PLATFORM_H / 2;
-  platform.receiveShadow = true;
-  platform.castShadow = true;
-  scene.add(platform);
+  // Floor grid overlay
+  const gridHelper = new THREE.PolarGridHelper(ROOM_W, 32, 20, 64, 0x2a3055, 0x1b2040);
+  gridHelper.position.y = -0.14;
+  scene.add(gridHelper);
 
-  // Glowing edge ring on top of the platform
-  const edge = new THREE.Mesh(
-    new THREE.RingGeometry(PLATFORM_R * 0.92, PLATFORM_R * 0.97, 64),
-    new THREE.MeshBasicMaterial({ color: 0x5df2d6, transparent: true, opacity: 0.65, side: THREE.DoubleSide })
-  );
-  edge.rotation.x = -Math.PI / 2;
-  edge.position.y = PLATFORM_H + 0.001;
-  scene.add(edge);
+  // Room walls — semi-transparent so you can see the bear
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0x1d2747, roughness: 0.7, metalness: 0.1,
+    transparent: true, opacity: 0.5,
+    emissive: 0x0d1430, emissiveIntensity: 0.2,
+  });
+
+  function addWall(w, h, d, x, y, z) {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const mesh = new THREE.Mesh(geo, wallMat);
+    mesh.position.set(x, y, z);
+    mesh.receiveShadow = true;
+    mesh.castShadow = true;
+    scene.add(mesh);
+    return mesh;
+  }
+
+  // Back wall (z-)
+  addWall(ROOM_W * 2 + WALL_THICK * 2, ROOM_H, WALL_THICK, 0, ROOM_H / 2, -ROOM_D);
+  // Front wall (z+)
+  addWall(ROOM_W * 2 + WALL_THICK * 2, ROOM_H, WALL_THICK, 0, ROOM_H / 2, ROOM_D);
+  // Left wall (x-)
+  addWall(WALL_THICK, ROOM_H, ROOM_D * 2, -ROOM_W, ROOM_H / 2, 0);
+  // Right wall (x+)
+  addWall(WALL_THICK, ROOM_H, ROOM_D * 2, ROOM_W, ROOM_H / 2, 0);
+
+  // Glowing edge strips on floor
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0x5df2d6, transparent: true, opacity: 0.4 });
+  function addEdge(x, z, w, d) {
+    const geo = new THREE.PlaneGeometry(w, d);
+    const mesh = new THREE.Mesh(geo, edgeMat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, -0.14, z);
+    scene.add(mesh);
+  }
+  addEdge(0, -ROOM_D, ROOM_W * 2, 0.06);
+  addEdge(0, ROOM_D, ROOM_W * 2, 0.06);
+  addEdge(-ROOM_W, 0, 0.06, ROOM_D * 2);
+  addEdge(ROOM_W, 0, 0.06, ROOM_D * 2);
 
   // Grid on the platform top so the surface reads as 3D
   const grid = new THREE.GridHelper(PLATFORM_R * 2 * 0.95, 10, 0x2a3a5a, 0x1a2238);
@@ -1459,7 +1477,7 @@ function mountRagdollScene(container) {
       const tmp = window.PEP_BASE.scene.clone(true);
       const box = new THREE.Box3().setFromObject(tmp);
       const size = new THREE.Vector3(); box.getSize(size);
-      const targetH = 2.35;  // match ragdoll physics height exactly
+      const targetH = 2.27;  // match PEP-Smol ragdoll height exactly
       const scale = targetH / Math.max(size.y, 0.1);
       groundOffset = -box.min.y * scale;
       cx = (box.min.x + box.max.x) / 2 * scale;
@@ -1530,13 +1548,13 @@ function mountRagdollScene(container) {
     skel.visible = true;
 
     const bodyDefs = [
-      { key: 'torso',   color: 0x5df2d6, halfH: 0.30, r: 0.16 },
-      { key: 'lThigh',  color: 0x5dd3f2, halfH: 0.22, r: 0.10 },
-      { key: 'rThigh',  color: 0x45d3ff, halfH: 0.22, r: 0.10 },
-      { key: 'lShin',   color: 0xffb84d, halfH: 0.20, r: 0.09 },
-      { key: 'rShin',   color: 0xff8b45, halfH: 0.20, r: 0.09 },
-      { key: 'lFoot',   color: 0xff5577, halfH: 0.10, r: 0.05 },
-      { key: 'rFoot',   color: 0xff4d9d, halfH: 0.10, r: 0.05 },
+      { key: 'torso',   color: 0x5df2d6, halfH: 0.26, r: 0.22 },
+      { key: 'lThigh',  color: 0x5dd3f2, halfH: 0.16, r: 0.12 },
+      { key: 'rThigh',  color: 0x45d3ff, halfH: 0.16, r: 0.12 },
+      { key: 'lShin',   color: 0xffb84d, halfH: 0.15, r: 0.11 },
+      { key: 'rShin',   color: 0xff8b45, halfH: 0.15, r: 0.11 },
+      { key: 'lFoot',   color: 0xff5577, halfH: 0.08, r: 0.07 },
+      { key: 'rFoot',   color: 0xff4d9d, halfH: 0.08, r: 0.07 },
     ];
 
     const meshes = {};
@@ -1599,9 +1617,9 @@ function mountRagdollScene(container) {
 
   // Apply a single Rapier snapshot to bear `bearIdx`. snap.bodies.torso
   // drives where THIS bear is rendered. Also updates physics debug skeleton.
-  // TORSO_TO_FEET = ~1.89m — distance from ragdoll torso center to feet bottom.
-  // Computed from ragdoll dimensions: TORSO_Y(1.80) - feet_bottom(-0.09) = 1.89
-  const TORSO_TO_FEET = 1.89;
+  // TORSO_TO_FEET = ~1.79m — distance from ragdoll torso center to feet.
+  // Computed from PEP-Smol proportions: TORSO_Y(1.72) - feet(-0.07) = 1.79
+  const TORSO_TO_FEET = 1.79;
   function applySnapshot(snap, bearIdx = 0) {
     const b = bears[bearIdx];
     if (!b || !b.model) return;
