@@ -132,7 +132,7 @@ function NextMatchCountdown({ targetMs }) {
   return <span>{pad(h)}:{pad(m)}:{pad(s)}</span>;
 }
 
-function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest, onStartBattle, onStartDaily }) {
+function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest, onStartBattle, onStartDaily, onTrainBrain, mazeTokens, mazeGen, mazeFitness }) {
   const nextMatchTime = React.useMemo(() => Date.now() + 1000 * 60 * 47 + 1000 * 23, []);
 
   return (
@@ -184,6 +184,21 @@ function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest, onStartBatt
           <div className="hero-match__preview">
             <MiniMaze />
           </div>
+        </div>
+
+        {/* Maze brain training — the core loop */}
+        <div className="card" style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center" }}>
+          <div>
+            <div className="card__label" style={{ marginBottom: 4 }}>YOUR AI BRAIN</div>
+            <div style={{ fontSize: 11, color: "var(--ink-2)", lineHeight: 1.5 }}>
+              Gen {mazeGen || 0} · Fitness {mazeFitness ? mazeFitness.toFixed(2) : "0.00"}
+              <br/>
+              <span style={{ color: "var(--amber)" }}>{mazeTokens || 0} training tokens</span> — earn more by completing quests
+            </div>
+          </div>
+          <button className="btn btn--amber" onClick={onTrainBrain} disabled={!mazeTokens}>
+            ⚡ TRAIN BRAIN
+          </button>
         </div>
 
         {/* KPI row */}
@@ -300,31 +315,6 @@ function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest, onStartBatt
               </div>
               <div className="row" style={{ marginTop: 10, gap: 4 }}>
               </div>
-            </div>
-
-            {/* Brain fitness overview — compact sparkline per trained skill */}
-            <SectionTitle>Brain fitness</SectionTitle>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {(window.dataLayer?.SKILL_DEFS || []).filter(d => d.isReal).map((def) => {
-                const key = window.skillTree?.brainKey(def.id, 1);
-                const brain = ai._brains?.[key];
-                const fitness = brain?.meta?.fitness;
-                const gen = brain?.meta?.gen;
-                const mastered = brain?.meta?.mastered;
-                return (
-                  <div key={def.id} className="row between" style={{ padding: "4px 8px", background: "var(--bg-1)", borderRadius: 6, border: "1px solid var(--line-soft)" }}>
-                    <div className="row" style={{ gap: 8, minWidth: 0 }}>
-                      <span style={{ fontFamily: "var(--font-display)", fontSize: 14, width: 20, textAlign: "center", color: mastered ? "var(--amber)" : "var(--mint)" }}>
-                        {def.glyph}
-                      </span>
-                      <span className="mono tiny" style={{ color: "var(--ink-1)" }}>{def.name}</span>
-                    </div>
-                    <span className="mono tiny" style={{ color: fitness ? (mastered ? "var(--amber)" : "var(--mint)") : "var(--ink-3)" }}>
-                      {fitness ? `${fitness.toFixed(2)} · gen ${gen || "?"}` : "untrained"}
-                    </span>
-                  </div>
-                );
-              })}
             </div>
           </div>
         </div>

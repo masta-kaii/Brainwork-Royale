@@ -5,11 +5,10 @@
 const { useState, useEffect, useRef, useMemo } = React;
 
 // Pre-build a few replays so Replays tab isn't empty on first load.
-// Uses demo brains if available so battles show brain-driven movement.
 function buildSeedReplays(ai, brains) {
-  const demoBrain = brains?.["walk-L1"] || brains?.["balance-L1"] || null;
-  const seedAi = demoBrain
-    ? { ...ai, brain: window.brainEngine?.brainFromJSON?.(demoBrain) || null }
+  const demoBrain = null; // no pre-seeded brains — user starts from zero
+  const seedAi = demoBrain && window.brainEngine?.brainFromJSON
+    ? { ...ai, brain: window.brainEngine.brainFromJSON(demoBrain) }
     : ai;
   const seeds = [13371, 92024, 4815];
   return seeds.map((seed, i) => {
@@ -39,25 +38,37 @@ function App({ user, initialState }) {
   const [replays, setReplays] = useState(() => buildSeedReplays(initialState.character, initialState.brains));
   const [classModal, setClassModal] = useState(false);
 
-  // AI object passed to BattleScreen includes the trained skill levels so
-  // sim.jsx can read them and apply battle bonuses.
-  // Pick the strongest mastered locomotion brain to drive the player's
-  // agent in Battle/Race. We prefer Run, then Walk, then Balance (any
-  // locomotion brain works because the sim only uses output magnitude).
-  // The chosen brain is decoded into the engine's internal format once.
+  // Maze brain state — the brain that learns to navigate mazes
+  const [mazeBrain, setMazeBrain] = useState(() => {
+    if (initialState.mazeBrain) return initialState.mazeBrain;
+    return createFreshMazeBrain();
+  });
+  const [mazeTokens, setMazeTokens] = useState(3);  // starting tokens
+  const [mazeGen, setMazeGen] = useState(0);
+  const [mazeFitness, setMazeFitness] = useState(0);
+  const [mazeTraining, setMazeTraining] = useState(false);
+
+  // AI object passed to BattleScreen includes trained skills + maze brain
   const aiBrain = useMemo(() => {
     const keys = ["run-L3", "run-L2", "run-L1", "walk-L3", "walk-L2", "walk-L1", "balance-L3"];
     for (const key of keys) {
       const json = brains?.[key];
       if (json && window.brainEngine?.brainFromJSON) {
         try { return { ...window.brainEngine.brainFromJSON(json), _meta: { key, ...(json.meta || {}) } }; }
-        catch (e) { /* ignore decode failures */ }
+        catch (e) { /* ignore */ }
       }
     }
     return null;
   }, [brains]);
 
-  const aiWithSkills = useMemo(() => ({ ...ai, skills, brain: aiBrain }), [ai, skills, aiBrain]);
+  const mazeBrainObj = useMemo(() => {
+    if (mazeBrain && typeof window.mazeBrainFromJSON === 'function') {
+      return window.mazeBrainFromJSON(mazeBrain);
+    }
+    return null;
+  }, [mazeBrain]);
+
+  const aiWithSkills = useMemo(() => ({ ...ai, skills, brain: aiBrain, mazeBrain: mazeBrainObj }), [ai, skills, aiBrain, mazeBrainObj]);
 
   // Composite "player" object used by HomeScreen + rail
   const player = useMemo(() => {
@@ -127,6 +138,98 @@ function App({ user, initialState }) {
     setClassModal(false);
   };
 
+  // Train maze brain with GA — burns tokens for generations
+  const trainMazeBrain = async () => {
+    if (mazeTraining || mazeTokens <= 0) return;
+    setMazeTraining(true);
+
+    const POP = 30;
+    const ELITE = 4;
+    const seed = Date.now();
+
+    // Build population from current brain
+    let pop = [];
+    const currentBrain = mazeBrainObj ? mazeBrainObj : (typeof window.makeMazeBrain === 'function' ? window.makeMazeBrain() : null);
+    if (!currentBrain) { setMazeTraining(false); return; }
+
+    pop.push({ brain: currentBrain, fitness: 0 });
+    for (let i = 1; i < POP; i++) {
+      pop.push({ brain: typeof window.mutateMazeBrain === 'function' ? window.mutateMazeBrain(currentBrain) : currentBrain, fitness: 0 });
+    }
+
+    const genCount = Math.min(mazeTokens, 10); // max 10 gens per click
+    let bestFit = mazeFitness;
+    let bestBrain = currentBrain;
+
+    for (let g = 0; g < genCount; g++) {
+      // Evaluate population on a fresh maze
+      const maze = window.genMaze?.(21, 21, seed + g);
+      if (!maze) break;
+
+      for (const p of pop) {
+        let fitness = 0;
+        // Run brain on maze for evaluation
+        let agent = {
+          x: 1.5, y: 1.5, facing: 0, speedPerTick: 0.13,
+          _memory: [], _stuckTimer: 0,
+          mazeBrain: p.brain,
+        };
+        let ticks = 0;
+        const exit = maze.treasure || maze.exit || [19, 19];
+        const startDist = Math.hypot(exit[0] - 1, exit[1] - 1);
+        let lastDist = startDist;
+
+        while (ticks < 600) {
+          if (!maze.grid) break;
+          const obs = typeof window.mazeObserve === 'function' ? window.mazeObserve(agent, maze) : [0,0,0,0,0,0,0,0];
+          const out = typeof window.mazeForward === 'function' ? window.mazeForward(p.brain, obs) : [0,0,0,0];
+          const turn = out[1] - out[0];
+          const move = out[2] - out[3];
+          agent.facing += Math.max(-0.3, Math.min(0.3, turn * 0.3));
+          if (move > -0.2) {
+            const step = 0.13 * Math.max(0.1, (move + 1) / 2);
+            agent.x += Math.cos(agent.facing) * step;
+            agent.y += Math.sin(agent.facing) * step;
+          }
+          const cx = Math.floor(agent.x), cy = Math.floor(agent.y);
+          if (cx < 0 || cy < 0 || cx >= (maze.cols || 21) || cy >= (maze.rows || 21) || (maze.grid[cy] && maze.grid[cy][cx] === 1)) {
+            agent.x = 1.5; agent.y = 1.5; // reset if stuck in wall
+          }
+          if (cx === exit[0] && cy === exit[1]) break;
+          ticks++;
+        }
+
+        const dist = Math.hypot(exit[0] - agent.x, exit[1] - agent.y);
+        fitness = Math.max(0, 1 - dist / startDist) * 5 + (ticks < 600 ? (600 - ticks) / 600 * 3 : 0);
+        p.fitness = fitness;
+      }
+
+      pop.sort((a, b) => b.fitness - a.fitness);
+      if (pop[0].fitness > bestFit) {
+        bestFit = pop[0].fitness;
+        bestBrain = typeof window.cloneMazeBrain === 'function' ? window.cloneMazeBrain(pop[0].brain) : pop[0].brain;
+      }
+
+      // Breed
+      const elites = pop.slice(0, ELITE).map(p => ({ brain: p.brain, fitness: 0 }));
+      const next = [...elites];
+      for (let i = elites.length; i < POP; i++) {
+        const parent = pop[Math.floor(Math.random() * Math.min(4, pop.length))].brain;
+        next.push({ brain: typeof window.mutateMazeBrain === 'function' ? window.mutateMazeBrain(parent) : parent, fitness: 0 });
+      }
+      pop = next;
+    }
+
+    // Update state
+    const json = typeof window.mazeBrainToJSON === 'function' ? window.mazeBrainToJSON(bestBrain, { gen: mazeGen + genCount, fitness: bestFit }) : null;
+    setMazeBrain(json);
+    setMazeTokens(t => t - genCount);
+    setMazeGen(g => g + genCount);
+    setMazeFitness(bestFit);
+    setMazeTraining(false);
+    showToast(`Brain trained ${genCount} gens · fitness ${bestFit.toFixed(2)}`);
+  };
+
   const completeQuest = (q) => {
     if (q.kind === "quiz") {
       setTab("quests");
@@ -156,7 +259,10 @@ function App({ user, initialState }) {
     setAi((a) => ({ ...a, stats: newStats }));
     window.dataLayer?.saveCharacterStats(uid, newStats);
     window.dataLayer?.markQuestRewardClaimed(uid, q.id);
-    showToast(`+${q.reward} ${q.rewardLabel} → ${ai.name}`);
+
+    // Grant maze training tokens on quest completion
+    setMazeTokens(t => t + 2);
+    showToast(`+${q.reward} ${q.rewardLabel} → ${ai.name} · +2 brain tokens`);
   };
 
   const onMatchComplete = (replay) => {
@@ -311,6 +417,10 @@ function App({ user, initialState }) {
                   setTab("daily");
                 });
               }}
+              onTrainBrain={trainMazeBrain}
+              mazeTokens={mazeTokens}
+              mazeGen={mazeGen}
+              mazeFitness={mazeFitness}
             />
           )}
           {tab === "quests" && (
@@ -507,37 +617,18 @@ function offlineFallbackState(user) {
     character: dl ? { ...dl.DEFAULT_CHARACTER } : { name: "Berok 1", class: "engineer", tier: "Bronze", generation: 1, trainingQueue: 0, stats: { speed: 50, stamina: 50, intelligence: 50, strength: 50 } },
     quests: dl ? dl.DEFAULT_QUESTS.map((q) => ({ ...q, status: "active", rewardClaimed: false })) : [],
     skills: fallbackSkills,
-    brains: generateDemoBrains(),
+    brains: {},
+    mazeBrain: null,  // fresh user — no maze brain yet
   };
 }
 
-// Pre-seeded demo brains so the fitness dashboard isn't empty on first load.
-// Uses the brain engine to generate real weight matrices with plausible meta.
-function generateDemoBrains() {
-  const be = window.brainEngine;
-  if (!be?.makeBrain || !be?.brainToJSON) return {};
-
-  const demos = {};
-
-  // Walk L1 — a partially-trained walker that shuffles forward
-  if (typeof be.makeBrain === "function") {
-    const walkBrain = be.makeBrain({ inputs: 14, hidden: 20, outputs: 4 });
-    demos["walk-L1"] = be.brainToJSON(walkBrain, {
-      skillId: "walk", level: 1, envId: "walk-L1",
-      gen: 20, fitness: 4.2, mastered: false,
-    });
+// Create a fresh random maze brain for new users.
+// Training tokens are earned via quizzes and spent on brain evolution.
+function createFreshMazeBrain() {
+  if (typeof window.makeMazeBrain === 'function') {
+    return window.mazeBrainToJSON(window.makeMazeBrain(), { gen: 0, fitness: 0 });
   }
-
-  // Balance L1 — a wobbly but standing bear
-  if (typeof be.makeBrain === "function") {
-    const balBrain = be.makeBrain({ inputs: 12, hidden: 16, outputs: 4 });
-    demos["balance-L1"] = be.brainToJSON(balBrain, {
-      skillId: "balance", level: 1, envId: "balance-L1",
-      gen: 8, fitness: 2.8, mastered: false,
-    });
-  }
-
-  return demos;
+  return null;
 }
 
 function refreshDailyQuests(state, uid) {

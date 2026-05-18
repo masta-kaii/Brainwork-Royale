@@ -16,6 +16,90 @@ const OBSTACLE_TYPES = {
                       //   Jump skill L1+ → 2 cells (faster crossing)
 };
 
+// ============================================================
+// MAZE BRAIN — neural network for navigation (replaces BFS)
+// 8→8→4 architecture: wall dists + exit + speed + stuck → turn/move
+// Agents with a trained brain use this. Agents without fall back to BFS.
+// ============================================================
+const MAZE_ARCH = { inputs: 8, hidden: 8, outputs: 4 };
+
+function makeMazeBrain() {
+  const { inputs, hidden, outputs } = MAZE_ARCH;
+  const w1 = [], b1 = [], w2 = [], b2 = [];
+  for (let i = 0; i < hidden; i++) {
+    const r = []; for (let j = 0; j < inputs; j++) r.push(Math.random() * 2 - 1);
+    w1.push(r); b1.push(Math.random() * 0.2 - 0.1);
+  }
+  for (let i = 0; i < outputs; i++) {
+    const r = []; for (let j = 0; j < hidden; j++) r.push(Math.random() * 2 - 1);
+    w2.push(r); b2.push(Math.random() * 0.2 - 0.1);
+  }
+  return { arch: { ...MAZE_ARCH, activation: 'tanh' }, w1, b1, w2, b2 };
+}
+
+function cloneMazeBrain(b) {
+  return { arch: { ...b.arch }, w1: b.w1.map(r => r.slice()), b1: b.b1.slice(), w2: b.w2.map(r => r.slice()), b2: b.b2.slice() };
+}
+
+function mazeForward(b, x) {
+  const h = [], o = [];
+  for (let i = 0; i < b.arch.hidden; i++) { let s = b.b1[i]; for (let j = 0; j < b.arch.inputs; j++) s += b.w1[i][j] * x[j]; h.push(Math.tanh(s)); }
+  for (let i = 0; i < b.arch.outputs; i++) { let s = b.b2[i]; for (let j = 0; j < b.arch.hidden; j++) s += b.w2[i][j] * h[j]; o.push(Math.tanh(s)); }
+  return o;
+}
+
+function mutateMazeBrain(b, rate, sigma) {
+  if (!rate) rate = 0.08; if (!sigma) sigma = 0.3;
+  const c = cloneMazeBrain(b);
+  const m = v => Math.random() < rate ? v + (Math.random() * 2 - 1) * sigma : v;
+  for (let i = 0; i < c.w1.length; i++) for (let j = 0; j < c.w1[i].length; j++) c.w1[i][j] = m(c.w1[i][j]);
+  for (let i = 0; i < c.b1.length; i++) c.b1[i] = m(c.b1[i]);
+  for (let i = 0; i < c.w2.length; i++) for (let j = 0; j < c.w2[i].length; j++) c.w2[i][j] = m(c.w2[i][j]);
+  for (let i = 0; i < c.b2.length; i++) c.b2[i] = m(c.b2[i]);
+  return c;
+}
+
+function mazeBrainToJSON(b, meta) {
+  return { schema: 'bw-maze-brain.v1', arch: b.arch, weights: { w1: b.w1, b1: b.b1, w2: b.w2, b2: b.b2 }, meta: { ...(meta || {}), ts: Date.now() } };
+}
+
+function mazeBrainFromJSON(j) {
+  if (!j || !j.weights) return null;
+  return { arch: j.arch || MAZE_ARCH, w1: j.weights.w1, b1: j.weights.b1, w2: j.weights.w2, b2: j.weights.b2 };
+}
+
+// Build observation vector for maze navigation (8 inputs)
+function mazeObserve(agent, maze) {
+  const { grid, cols, rows } = maze;
+  const exit = maze.treasure || maze.exit || [Math.floor(cols / 2), Math.floor(rows / 2)];
+  function wallDist(cx, cy, dx, dy, mx) {
+    for (let d = 0; d < mx; d++) {
+      const tx = Math.floor(cx) + dx * d, ty = Math.floor(cy) + dy * d;
+      if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return d / mx;
+      if (grid[ty][tx] === 1) return d / mx;
+    }
+    return 1;
+  }
+  const maxDist = Math.max(cols, rows);
+  const dN = wallDist(agent.x, agent.y, 0, -1, maxDist);
+  const dS = wallDist(agent.x, agent.y, 0, 1, maxDist);
+  const dE = wallDist(agent.x, agent.y, 1, 0, maxDist);
+  const dW = wallDist(agent.x, agent.y, -1, 0, maxDist);
+  const dxEx = exit[0] - agent.x, dyEx = exit[1] - agent.y;
+  const distExit = Math.hypot(dxEx, dyEx) / Math.hypot(cols, rows);
+  const speedNorm = (agent.speedPerTick || 0.13) * 5;
+  const stuckNorm = Math.min(1, (agent._stuckTimer || 0) / 100);
+  let rec = 1;
+  const cx = Math.floor(agent.x), cy = Math.floor(agent.y);
+  if (agent._memory) {
+    for (let i = agent._memory.length - 1; i >= 0; i--) {
+      const [mx, my] = agent._memory[i];
+      if (Math.floor(mx) === cx && Math.floor(my) === cy) { rec = 1 - (agent._memory.length - i) / agent._memory.length; break; }
+    }
+  }
+  return [dN, dS, dE, dW, distExit, speedNorm, stuckNorm, rec];
+}
+
 // ---------- Maze generation (recursive backtracker) ----------
 function genMaze(cols, rows, seed) {
   const grid = Array.from({ length: rows }, () => Array(cols).fill(1));
@@ -240,10 +324,13 @@ function createBattleSim(seed, you, opts) {
 
     // Bot agents get a brain too — the player's trained brain goes to the
     // player, and any pre-loaded bot brains are cycled through opponents.
-    // A bot with a brain moves faster (brainBoost) just like the player.
+    // mazeBrain (if present) enables brain-driven navigation instead of BFS.
     const agentBrain = i === 0
       ? (you.brain || null)
       : (botBrains[(i - 1) % botBrains.length] || null);
+    const agentMazeBrain = i === 0
+      ? (you.mazeBrain || null)
+      : null;  // bots use BFS for now
 
     agents.push({
       id: i,
@@ -258,6 +345,9 @@ function createBattleSim(seed, you, opts) {
       // through any pre-loaded bot brains.
       brain: agentBrain,
       brainBoost: 1.0,                              // updated each tick if brain present
+      mazeBrain: agentMazeBrain,                     // maze navigation brain (if trained)
+      _memory: [],                                   // position memory for brain observation
+      _stuckTimer: 0,                                // ticks since last meaningful move
       x: sx, y: sy,                 // continuous floats
       prevX: sx, prevY: sy,
       lastCellX: sx, lastCellY: sy, // for obstacle-on-entry detection
@@ -332,70 +422,93 @@ function createBattleSim(seed, you, opts) {
         continue;
       }
 
-      // ---- Pick a goal cell ----
-      let goal;
-      const aggressive = a.hp > a.maxHp * 0.35 && nearestEnemy && a.strength > 60;
-      if (aggressive) {
-        goal = [Math.floor(nearestEnemy.x), Math.floor(nearestEnemy.y)];
-      } else if (a.hp < a.maxHp * 0.3 && nearestEnemy) {
-        const dx = a.x - nearestEnemy.x, dy = a.y - nearestEnemy.y;
-        const gx = Math.max(1, Math.min(cols - 2, Math.floor(a.x) + Math.sign(dx) * 4));
-        const gy = Math.max(1, Math.min(rows - 2, Math.floor(a.y) + Math.sign(dy) * 4));
-        goal = [gx, gy];
-      } else {
-        goal = treasure;
-      }
+      // ---- Movement: brain-driven (if maze brain) or BFS (fallback) ----
+      // Agents with a trained maze brain use neural network inference to
+      // decide turn + move each tick. Agents without fall back to BFS pathfinding.
+      if (a.mazeBrain) {
+        // Memory ring buffer for brain observation
+        if (!a._memory) a._memory = [];
+        a._memory.push([a.x, a.y]);
+        if (a._memory.length > 24) a._memory.shift();
 
-      // ---- Refresh path from the agent's current cell ----
-      const cellX = Math.floor(a.x), cellY = Math.floor(a.y);
-      if (!a.path || a.path.length < 2 || tick % 12 === 0) {
-        a.path = bfsPath(grid, cols, rows, [cellX, cellY], goal);
-      }
+        // Observe + decide
+        const obs = mazeObserve(a, maze);
+        const out = mazeForward(a.mazeBrain, obs);
+        // Outputs: [left, right, forward, stay] — tanh range [-1,1]
+        const turn = out[1] - out[0];  // right bias - left bias
+        const move = out[2] - out[3];  // forward bias - stay bias
 
-      // ---- Brain inference (any agent with a trained brain attached) ----
-      // The exported locomotion brain runs forward with a synthesized
-      // observation; its output magnitude becomes a speed multiplier so
-      // a trained bear visibly moves with more conviction than an untrained one.
-      if (a.brain && a.path && a.path.length > 1) {
-        const fe = window.brainEngine?.forward;
-        if (fe) {
-          // 12 zeros (no physics torso/joint info in battle) + 2 target offsets
-          const [wx0, wy0] = a.path[1];
-          const inputs = new Array(a.brain.arch.inputs).fill(0);
-          if (inputs.length >= 14) {
-            inputs[12] = (wx0 - a.x) / 10;
-            inputs[13] = (wy0 - a.y) / 10;
-          }
-          const out = fe(a.brain, inputs);
-          let mag = 0;
-          for (const o of out) mag += Math.abs(o);
-          mag /= out.length || 1;
-          // Map [0..1] → [1.0..1.5] — modest, observable speed bonus
-          a.brainBoost = 1.0 + Math.min(0.5, mag * 0.5);
-        }
-      }
+        // Apply turn (smooth, max 0.3 rad/tick)
+        a.facing += Math.max(-0.3, Math.min(0.3, turn * 0.3));
 
-      // ---- Advance toward the next waypoint ----
-      if (a.path && a.path.length > 1) {
-        let stepDist = a.speedPerTick * (a.brainBoost || 1);
-        if ((a.boostUntil || 0) > tick) stepDist *= 2;
-        if ((a.slowUntil || 0)  > tick) stepDist *= 0.5;
-
-        const [wx, wy] = a.path[1];
-        const dx = wx - a.x, dy = wy - a.y;
-        const dist = Math.hypot(dx, dy);
+        // Apply movement
         a.prevX = a.x; a.prevY = a.y;
-
-        if (dist <= stepDist) {
-          // Reached waypoint — snap + advance the path
-          a.x = wx; a.y = wy;
-          a.path.shift();
+        if (move > -0.2) {
+          const step = a.speedPerTick * Math.max(0.1, (move + 1) / 2);
+          a.x += Math.cos(a.facing) * step;
+          a.y += Math.sin(a.facing) * step;
+          a._stuckTimer = Math.max(0, a._stuckTimer - 1);
+          a.lastMoveTick = tick;
         } else {
-          a.x += (dx / dist) * stepDist;
-          a.y += (dy / dist) * stepDist;
+          a._stuckTimer++;
         }
-        if (dx !== 0 || dy !== 0) a.facing = Math.atan2(dx, dy);
-        a.lastMoveTick = tick;
+
+        // Wall collision
+        const ncx = Math.floor(a.x), ncy = Math.floor(a.y);
+        if (ncx < 0 || ncy < 0 || ncx >= cols || ncy >= rows || grid[ncy][ncx] === 1) {
+          a.x = a.prevX; a.y = a.prevY;
+          a._stuckTimer += 2;
+        }
+
+        // Still update brainBoost from locomotion brain if present
+        a.brainBoost = 1.0;
+        if (a.brain) {
+          const obs2 = mazeObserve(a, maze);
+          const out2 = mazeForward({ arch: MAZE_ARCH, w1: a.brain.w1 || [], b1: a.brain.b1 || [], w2: a.brain.w2 || [], b2: a.brain.b2 || [] }, obs2);
+          let mag = 0; for (const o of out2) mag += Math.abs(o);
+          a.brainBoost = 1.0 + Math.min(0.5, (mag / (out2.length || 1)) * 0.5);
+        }
+      } else {
+        // Fallback: BFS pathfinding (original behavior, backward compatible)
+        let goal;
+        const aggressive = a.hp > a.maxHp * 0.35 && nearestEnemy && a.strength > 60;
+        if (aggressive) {
+          goal = [Math.floor(nearestEnemy.x), Math.floor(nearestEnemy.y)];
+        } else if (a.hp < a.maxHp * 0.3 && nearestEnemy) {
+          const dx = a.x - nearestEnemy.x, dy = a.y - nearestEnemy.y;
+          goal = [Math.max(1, Math.min(cols - 2, Math.floor(a.x) + Math.sign(dx) * 4)),
+                  Math.max(1, Math.min(rows - 2, Math.floor(a.y) + Math.sign(dy) * 4))];
+        } else {
+          goal = treasure;
+        }
+        const cellX = Math.floor(a.x), cellY = Math.floor(a.y);
+        if (!a.path || a.path.length < 2 || tick % 12 === 0) {
+          a.path = bfsPath(grid, cols, rows, [cellX, cellY], goal);
+        }
+        if (a.brain && a.path && a.path.length > 1) {
+          const fe = window.brainEngine?.forward;
+          if (fe) {
+            const [wx0, wy0] = a.path[1];
+            const inputs = new Array(a.brain.arch.inputs).fill(0);
+            if (inputs.length >= 14) { inputs[12] = (wx0 - a.x) / 10; inputs[13] = (wy0 - a.y) / 10; }
+            const out = fe(a.brain, inputs);
+            let mag = 0; for (const o of out) mag += Math.abs(o);
+            a.brainBoost = 1.0 + Math.min(0.5, (mag / (out.length || 1)) * 0.5);
+          }
+        }
+        if (a.path && a.path.length > 1) {
+          let stepDist = a.speedPerTick * (a.brainBoost || 1);
+          if ((a.boostUntil || 0) > tick) stepDist *= 2;
+          if ((a.slowUntil || 0) > tick) stepDist *= 0.5;
+          const [wx, wy] = a.path[1];
+          const dx = wx - a.x, dy = wy - a.y;
+          const dist = Math.hypot(dx, dy);
+          a.prevX = a.x; a.prevY = a.y;
+          if (dist <= stepDist) { a.x = wx; a.y = wy; a.path.shift(); }
+          else { a.x += (dx / dist) * stepDist; a.y += (dy / dist) * stepDist; }
+          if (dx !== 0 || dy !== 0) a.facing = Math.atan2(dx, dy);
+          a.lastMoveTick = tick;
+        }
       }
 
       // ---- Obstacle effect when crossing into a new cell ----
@@ -586,4 +699,7 @@ Object.assign(window, {
   createBattleSim, createRaceSim, createDailySim,
   dailyMazeSeed,
   buildReplay,
+  // Maze brain system
+  MAZE_ARCH, makeMazeBrain, cloneMazeBrain, mazeForward,
+  mutateMazeBrain, mazeBrainToJSON, mazeBrainFromJSON, mazeObserve,
 });
