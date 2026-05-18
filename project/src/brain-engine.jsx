@@ -138,19 +138,49 @@ function _capsuleBody(world, x, y, z, halfHeight, radius, density = 1.0) {
 // 6 joints: 2 hips + 2 knees (brain-driven), 2 ankles (passive, dangle).
 function createRagdoll(world, originX = 0, originZ = 0) {
   const RAPIER = window.RAPIER;
-  // PEP-Smol proportions — short, wide, chubby bear
+
+  // Try to match PEP-Smol model skeleton. If bone positions are available
+  // (extracted in scene3d.jsx), use them. Otherwise fall back to defaults.
+  const bp = window._pepBonePositions || {};
+  const hasBones = bp["Hips"] || bp["mixamorig:Hips"] || false;
+
+  // Default PEP-Smol proportions (short, wide, chubby bear)
   const TORSO_HALF = 0.26, TORSO_R = 0.22;
   const THIGH_HALF = 0.16, THIGH_R = 0.12;
   const SHIN_HALF  = 0.15, SHIN_R  = 0.11;
   const FOOT_HALF  = 0.08, FOOT_R  = 0.07;
-  const HIP_DX  = 0.16; // slightly wider stance
+  const HIP_DX  = 0.16;
 
-  // Vertical positions for spawn pose (legs straight, torso upright)
-  const FOOT_Y  = FOOT_R + 0.01;
-  const SHIN_Y  = FOOT_Y + FOOT_R + SHIN_HALF + SHIN_R + 0.01;
-  const THIGH_Y = SHIN_Y + SHIN_HALF + SHIN_R + THIGH_HALF + THIGH_R;
-  const HIP_Y   = THIGH_Y + THIGH_HALF + THIGH_R;
-  const TORSO_Y = HIP_Y + TORSO_HALF + TORSO_R;
+  // If we have bone data, use it to position bodies precisely
+  let TORSO_Y, THIGH_Y, SHIN_Y, FOOT_Y;
+  if (hasBones) {
+    // Find hip/spine bone — try multiple naming conventions
+    const hip = bp["Hips"] || bp["mixamorig:Hips"] || bp["Spine"] || bp["mixamorig:Spine"]
+      || bp["Root"] || bp["Armature"] || Object.values(bp).find(p => p.y > 1 && p.y < 2.5) || { y: 1.72 };
+    const lThighBone = bp["Left_Thigh-Local"] || bp["LeftUpLeg"] || bp["mixamorig:LeftUpLeg"]
+      || bp["Left_Thigh"] || Object.values(bp).find(p => p.x < -0.1 && p.y > 0.8 && p.y < 1.4) || { y: 1.16 };
+    const rThighBone = bp["Right_Thigh-Local"] || bp["RightUpLeg"] || bp["mixamorig:RightUpLeg"]
+      || bp["Right_Thigh"] || Object.values(bp).find(p => p.x > 0.1 && p.y > 0.8 && p.y < 1.4) || { y: 1.16 };
+    const lLegBone = bp["Left_Leg-Local"] || bp["LeftLeg"] || bp["mixamorig:LeftLeg"]
+      || bp["Left_Leg"] || Object.values(bp).find(p => p.x < -0.1 && p.y > 0.2 && p.y < 0.8) || { y: 0.42 };
+    const rLegBone = bp["Right_Leg-Local"] || bp["RightLeg"] || bp["mixamorig:RightLeg"]
+      || bp["Right_Leg"] || Object.values(bp).find(p => p.x > 0.1 && p.y > 0.2 && p.y < 0.8) || { y: 0.42 };
+    const lFootBone = bp["Left_Foot-Local"] || bp["LeftFoot"] || bp["mixamorig:LeftFoot"]
+      || bp["Left_Foot"] || Object.values(bp).find(p => p.x < -0.1 && p.y < 0.2) || { y: 0.08 };
+    const rFootBone = bp["Right_Foot-Local"] || bp["RightFoot"] || bp["mixamorig:RightFoot"]
+      || bp["Right_Foot"] || Object.values(bp).find(p => p.x > 0.1 && p.y < 0.2) || { y: 0.08 };
+
+    TORSO_Y = hip.y;
+    THIGH_Y = (lThighBone.y + rThighBone.y) / 2;
+    SHIN_Y = (lLegBone.y + rLegBone.y) / 2;
+    FOOT_Y = (lFootBone.y + rFootBone.y) / 2;
+  } else {
+    // Fallback computed positions
+    FOOT_Y  = FOOT_R + 0.01;
+    SHIN_Y  = FOOT_Y + FOOT_R + SHIN_HALF + SHIN_R + 0.01;
+    THIGH_Y = SHIN_Y + SHIN_HALF + SHIN_R + THIGH_HALF + THIGH_R;
+    TORSO_Y = THIGH_Y + THIGH_HALF + THIGH_R + TORSO_HALF + TORSO_R;
+  }
 
   const torso  = _capsuleBody(world, originX,           TORSO_Y, originZ, TORSO_HALF, TORSO_R, 1.2);
   const lThigh = _capsuleBody(world, originX - HIP_DX,  THIGH_Y, originZ, THIGH_HALF, THIGH_R, 1.0);

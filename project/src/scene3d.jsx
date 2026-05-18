@@ -1324,49 +1324,40 @@ function mountRagdollScene(container) {
   gridHelper.position.y = -0.14;
   scene.add(gridHelper);
 
-  // Room walls — semi-transparent so you can see the bear
-  const wallMat = new THREE.MeshStandardMaterial({
-    color: 0x1d2747, roughness: 0.7, metalness: 0.1,
-    transparent: true, opacity: 0.5,
-    emissive: 0x0d1430, emissiveIntensity: 0.2,
+  // Solid wall material
+  const solidWallMat = new THREE.MeshStandardMaterial({
+    color: 0x1a2040, roughness: 0.6, metalness: 0.2,
+    emissive: 0x0a1020, emissiveIntensity: 0.3,
+  });
+  // Transparent front wall — user can see through this side
+  const frontWallMat = new THREE.MeshStandardMaterial({
+    color: 0x1d2747, roughness: 0.5, metalness: 0.1,
+    transparent: true, opacity: 0.25,
   });
 
-  function addWall(w, h, d, x, y, z) {
-    const geo = new THREE.BoxGeometry(w, h, d);
-    const mesh = new THREE.Mesh(geo, wallMat);
+  const wallDimW = ROOM_W * 2 + WALL_THICK * 2;
+  const wallDimD = ROOM_D * 2;
+
+  function _addWall(x, y, z, w, h, d, mat) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(x, y, z);
     mesh.receiveShadow = true;
     mesh.castShadow = true;
     scene.add(mesh);
-    return mesh;
   }
 
-  // Back wall (z-)
-  addWall(ROOM_W * 2 + WALL_THICK * 2, ROOM_H, WALL_THICK, 0, ROOM_H / 2, -ROOM_D);
-  // Front wall (z+)
-  addWall(ROOM_W * 2 + WALL_THICK * 2, ROOM_H, WALL_THICK, 0, ROOM_H / 2, ROOM_D);
-  // Left wall (x-)
-  addWall(WALL_THICK, ROOM_H, ROOM_D * 2, -ROOM_W, ROOM_H / 2, 0);
-  // Right wall (x+)
-  addWall(WALL_THICK, ROOM_H, ROOM_D * 2, ROOM_W, ROOM_H / 2, 0);
+  // Back wall (z-) — solid
+  _addWall(0, ROOM_H / 2, -ROOM_D, wallDimW, ROOM_H, WALL_THICK, solidWallMat);
+  // Front wall (z+) — transparent for viewing
+  _addWall(0, ROOM_H / 2, ROOM_D, wallDimW, ROOM_H, WALL_THICK, frontWallMat);
+  // Left wall (x-) — solid
+  _addWall(-ROOM_W, ROOM_H / 2, 0, WALL_THICK, ROOM_H, wallDimD, solidWallMat);
+  // Right wall (x+) — solid
+  _addWall(ROOM_W, ROOM_H / 2, 0, WALL_THICK, ROOM_H, wallDimD, solidWallMat);
 
-  // Glowing edge strips on floor
-  const edgeMat = new THREE.MeshBasicMaterial({ color: 0x5df2d6, transparent: true, opacity: 0.4 });
-  function addEdge(x, z, w, d) {
-    const geo = new THREE.PlaneGeometry(w, d);
-    const mesh = new THREE.Mesh(geo, edgeMat);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(x, -0.14, z);
-    scene.add(mesh);
-  }
-  addEdge(0, -ROOM_D, ROOM_W * 2, 0.06);
-  addEdge(0, ROOM_D, ROOM_W * 2, 0.06);
-  addEdge(-ROOM_W, 0, 0.06, ROOM_D * 2);
-  addEdge(ROOM_W, 0, 0.06, ROOM_D * 2);
-
-  // Grid on the platform top so the surface reads as 3D
-  const grid = new THREE.GridHelper(PLATFORM_R * 2 * 0.95, 10, 0x2a3a5a, 0x1a2238);
-  grid.position.y = PLATFORM_H + 0.002;
+  // Floor grid
+  const grid = new THREE.GridHelper(ROOM_W * 2, 12, 0x2a3a5a, 0x1a2238);
+  grid.position.y = -0.13;
   scene.add(grid);
 
   // ============================================================
@@ -1489,7 +1480,6 @@ function mountRagdollScene(container) {
         if (o.isMesh) {
           o.castShadow = true;
           o.receiveShadow = true;
-          // Clone materials so per-bear tints don't leak
           if (o.material) {
             const list = Array.isArray(o.material) ? o.material : [o.material];
             const next = list.map((m) => m.clone());
@@ -1501,6 +1491,19 @@ function mountRagdollScene(container) {
         if (o.name === "Left_Leg-Local")    legBones.lShin = { bone: o, restQuat: o.quaternion.clone() };
         if (o.name === "Right_Leg-Local")   legBones.rShin = { bone: o, restQuat: o.quaternion.clone() };
       });
+
+      // Extract skeleton world positions for physics ragdoll alignment
+      model.updateWorldMatrix(true, false);
+      const bonePositions = {};
+      model.traverse((o) => {
+        if (o.isBone && o.name) {
+          const wp = new THREE.Vector3();
+          o.getWorldPosition(wp);
+          bonePositions[o.name] = { x: wp.x, y: wp.y, z: wp.z };
+        }
+      });
+      // Expose so brain-engine can use them for ragdoll creation
+      window._pepBonePositions = bonePositions;
       scene.add(model);
 
       mixer = new THREE.AnimationMixer(model);
