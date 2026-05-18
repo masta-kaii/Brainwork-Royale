@@ -1680,6 +1680,7 @@ function mountRagdollScene(container) {
       torso.z - b.cz
     );
     b.model.quaternion.set(torso.qx, torso.qy, torso.qz, torso.qw);
+    b._lastBodies = bodies;  // store for _flushJointAngles bone positioning
 
     // Update physics body position indicators
     for (const [key, sphere] of Object.entries(bodyMarkers)) {
@@ -1711,6 +1712,7 @@ function mountRagdollScene(container) {
 
   const _legAxis = new THREE.Vector3(1, 0, 0);
   const _tmpQ = new THREE.Quaternion();
+  const _tmpQ2 = new THREE.Quaternion();
   let _smoothTargets = {}; // per-bear smoothed joint angles
   function applyJointAngles(joints, bearIdx = 0) {
     const b = bears[bearIdx];
@@ -1719,26 +1721,31 @@ function mountRagdollScene(container) {
   }
   function _flushJointAngles() {
     for (const b of bears) {
-      if (!b.pendingJoints) continue;
-      if (!_smoothTargets[b._id]) _smoothTargets[b._id] = { lHip: 0, rHip: 0, lKnee: 0, rKnee: 0 };
-      const tgt = _smoothTargets[b._id];
-      // Damp toward target angles for smooth bone movement
-      const DAMP = 0.6;  // snap to target angle quickly
-      tgt.lHip = tgt.lHip + (b.pendingJoints.lHip - tgt.lHip) * DAMP;
-      tgt.rHip = tgt.rHip + (b.pendingJoints.rHip - tgt.rHip) * DAMP;
-      tgt.lKnee = tgt.lKnee + (b.pendingJoints.lKnee - tgt.lKnee) * DAMP;
-      tgt.rKnee = tgt.rKnee + (b.pendingJoints.rKnee - tgt.rKnee) * DAMP;
+      if (!b._lastBodies || !b.legBones) continue;
+      const bodies = b._lastBodies;
 
-      for (const name of ["lHip", "rHip", "lShin", "rShin"]) {
-        const entry = b.legBones[name];
-        if (!entry) continue;
-        let angle;
-        if (name === "lHip")       angle = tgt.lHip;
-        else if (name === "rHip")  angle = tgt.rHip;
-        else if (name === "lShin") angle = tgt.lKnee;
-        else                       angle = tgt.rKnee;
-        _tmpQ.setFromAxisAngle(_legAxis, angle);
-        entry.bone.quaternion.copy(entry.restQuat).multiply(_tmpQ);
+      // Direct bone position tracking — move bones to physics body positions
+      for (const [boneKey, bodyKey] of [['lHip','lThigh'],['rHip','rThigh'],['lShin','lShin'],['rShin','rShin']]) {
+        const body = bodies[bodyKey];
+        const entry = b.legBones[boneKey];
+        if (!body || !entry) continue;
+
+        // Get bone's current world position and parent world position
+        const boneWP = new THREE.Vector3();
+        entry.bone.getWorldPosition(boneWP);
+        const parentWP = new THREE.Vector3();
+        if (entry.bone.parent) entry.bone.parent.getWorldPosition(parentWP);
+
+        // Move bone so it reaches body position (in local coords)
+        const dx = (body.x - boneWP.x) * 0.5;
+        const dy = (body.y - boneWP.y) * 0.5;
+        const dz = (body.z - boneWP.z) * 0.5;
+        entry.bone.position.x += dx;
+        entry.bone.position.y += dy;
+        entry.bone.position.z += dz;
+
+        // Also match body rotation
+        entry.bone.quaternion.set(body.qx, body.qy, body.qz, body.qw);
       }
     }
   }
