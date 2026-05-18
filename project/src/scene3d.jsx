@@ -1325,7 +1325,7 @@ function mountRagdollScene(container) {
   scene.add(grid);
 
   const solidWallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0 });
-  const frontWallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4, metalness: 0, transparent: true, opacity: 0.12 });
+  // All walls solid — no transparent front wall
 
   function _addWall(x, y, z, w, h, d, mat) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -1335,7 +1335,7 @@ function mountRagdollScene(container) {
   }
 
   _addWall(0, ROOM_H / 2, -ROOM_D, wallDimW, ROOM_H, WALL_THICK, solidWallMat);
-  _addWall(0, ROOM_H / 2, ROOM_D, wallDimW, ROOM_H, WALL_THICK, frontWallMat);
+  _addWall(0, ROOM_H / 2, ROOM_D, wallDimW, ROOM_H, WALL_THICK, solidWallMat);
   _addWall(-ROOM_W, ROOM_H / 2, 0, WALL_THICK, ROOM_H, wallDimD, solidWallMat);
   _addWall(ROOM_W, ROOM_H / 2, 0, WALL_THICK, ROOM_H, wallDimD, solidWallMat);
   scene.add(grid);
@@ -1464,7 +1464,11 @@ function mountRagdollScene(container) {
           o.castShadow = true; o.receiveShadow = true;
           if (o.material) {
             const list = Array.isArray(o.material) ? o.material : [o.material];
-            o.material = Array.isArray(o.material) ? list.map(m => m.clone()) : o.material.clone();
+            o.material = Array.isArray(o.material) ? list.map(m => {
+              const c = m.clone();
+              c.transparent = false; c.opacity = 1; c.depthWrite = true;
+              return c;
+            }) : o.material.clone();
           }
         }
         if (o.name === "Left_Thigh-Local")  legBones.lHip  = { bone: o, restQuat: o.quaternion.clone() };
