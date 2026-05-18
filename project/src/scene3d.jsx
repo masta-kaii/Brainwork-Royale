@@ -1484,6 +1484,9 @@ function mountRagdollScene(container) {
       });
       // Expose so brain-engine can use them for ragdoll creation
       window._pepBonePositions = bonePositions;
+
+      // Position model at spawn pose so it's visible before training starts
+      model.position.set(0, groundOffset, 0);
       scene.add(model);
 
       mixer = new THREE.AnimationMixer(model);
@@ -1555,8 +1558,8 @@ function mountRagdollScene(container) {
     for (const def of bodyDefs) {
       const geo = new THREE.CapsuleGeometry(def.r, def.halfH * 2, 8, 12);
       const mat = new THREE.MeshStandardMaterial({
-        color: def.color, roughness: 0.6, metalness: 0.1,
-        transparent: true, opacity: 0.7, depthWrite: true,
+        color: def.color, roughness: 0.4, metalness: 0.05,
+        transparent: true, opacity: 0.3, depthWrite: false,
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
