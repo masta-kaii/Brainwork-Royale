@@ -1249,8 +1249,8 @@ function createTrainingScene(container, classId) {
 // ============================================================
 function mountRagdollScene(container) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x05060c);
-  scene.fog = new THREE.Fog(0x05060c, 10, 28);
+  scene.background = new THREE.Color(0xe8e8e8);
+  scene.fog = null;  // no fog for training room
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -1292,8 +1292,8 @@ function mountRagdollScene(container) {
   camera.position.set(5.0, 3.0, 7.0);
   camera.lookAt(0, 1.5, 0);
 
-  scene.add(new THREE.AmbientLight(0x3a4060, 0.55));
-  const sun = new THREE.DirectionalLight(0xfff2dc, 1.05);
+  scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.4);
   sun.position.set(4, 8, 3); sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.camera.left = -6; sun.shadow.camera.right = 6;
@@ -1313,7 +1313,7 @@ function mountRagdollScene(container) {
 
   // White floor
   const floorGeo = new THREE.PlaneGeometry(wallDimW, wallDimD);
-  const floorMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.9, metalness: 0, emissive: 0x222222, emissiveIntensity: 0.08 });
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0 });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.15;
@@ -1324,8 +1324,8 @@ function mountRagdollScene(container) {
   grid.position.y = -0.13;
   scene.add(grid);
 
-  const solidWallMat = new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.8, metalness: 0, emissive: 0x111111, emissiveIntensity: 0.03 });
-  const frontWallMat = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.5, metalness: 0, transparent: true, opacity: 0.18 });
+  const solidWallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0 });
+  const frontWallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4, metalness: 0, transparent: true, opacity: 0.12 });
 
   function _addWall(x, y, z, w, h, d, mat) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -1438,6 +1438,41 @@ function mountRagdollScene(container) {
   const BEAR_OFFSETS = [0];     // centered on the platform
   const bears = [];   // each: { model, mixer, actions, legBones, currentAnim, currentAction, pendingJoints, groundOffset, cx, cz, offsetX }
 
+  // Try loading the real PEP-Smol model in background. If it loads,
+  // replace the fallback bear with the actual model.
+  function tryLoadPepSmol() {
+    if (window.PEP_BASE && !window.PEP_FAILED) {
+      // Already loaded — rebuild the bear
+      rebuildBearWithModel();
+      return;
+    }
+    // Wait for model to load
+    const onReady = () => {
+      window.removeEventListener('app-ready', onReady);
+      if (window.PEP_BASE && !window.PEP_FAILED) {
+        rebuildBearWithModel();
+      }
+    };
+    window.addEventListener('app-ready', onReady);
+    // Also poll in case app-ready already fired but model just finished
+    setTimeout(() => {
+      if (window.PEP_BASE && !window.PEP_FAILED && bears[0] && !bears[0].mixer) {
+        rebuildBearWithModel();
+      }
+    }, 3000);
+  }
+
+  function rebuildBearWithModel() {
+    // Remove old fallback
+    const oldBear = bears[0];
+    if (oldBear && oldBear.model) scene.remove(oldBear.model);
+    // Re-create with real model
+    const newBear = _makeBearInstance(BEAR_OFFSETS[0] || 0);
+    bears[0] = newBear;
+    if (newBear.model) newBear.model.position.set(...oldBear?.model?.position?.toArray() || [0, 1.2, -1]);
+    playClip("Idle 01", 0, true, 0);
+  }
+
   function _makeBearInstance(offsetX) {
     const legBones = {};
     let model = null, mixer = null;
@@ -1499,17 +1534,45 @@ function mountRagdollScene(container) {
         actions[clip.name] = mixer.clipAction(clip);
       });
     } else {
-      // Fallback capsule — visible placeholder when PEP-Smol hasn't loaded
-      const fallbackGeo = new THREE.CapsuleGeometry(0.22, 1.5, 8, 16);
-      const fallbackMat = new THREE.MeshStandardMaterial({
-        color: 0x5df2d6, roughness: 0.5, metalness: 0.1,
-        emissive: 0x2a8a7a, emissiveIntensity: 0.5,
-      });
-      model = new THREE.Mesh(fallbackGeo, fallbackMat);
-      model.position.set(0, 1.2, 0);
-      model.castShadow = true; model.receiveShadow = true;
+      // Fallback bear — simple shapes, always renders even if PEP-Smol fails
+      const fbGroup = new THREE.Group();
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8B5A3C, roughness: 0.5 });
+      const darkMat = new THREE.MeshStandardMaterial({ color: 0x3a1f0a, roughness: 0.5 });
+
+      // Torso
+      fbGroup.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.5, 8, 12), bodyMat));
+      // Head
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), bodyMat);
+      head.position.set(0, 0.7, 0); fbGroup.add(head);
+      // Ears
+      const earL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), darkMat);
+      earL.position.set(-0.12, 0.84, 0); fbGroup.add(earL);
+      const earR = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), darkMat);
+      earR.position.set(0.12, 0.84, 0); fbGroup.add(earR);
+      // Eyes
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const eL = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 4), eyeMat);
+      eL.position.set(-0.06, 0.74, 0.16); fbGroup.add(eL);
+      const eR = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 4), eyeMat);
+      eR.position.set(0.06, 0.74, 0.16); fbGroup.add(eR);
+      // Arms
+      fbGroup.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.25, 6, 8), bodyMat))
+        .position.set(-0.26, 0.05, 0);
+      fbGroup.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.25, 6, 8), bodyMat))
+        .position.set(0.26, 0.05, 0);
+      // Legs
+      fbGroup.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.2, 6, 8), darkMat))
+        .position.set(-0.1, -0.5, 0);
+      fbGroup.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.2, 6, 8), darkMat))
+        .position.set(0.1, -0.5, 0);
+
+      fbGroup.position.set(0, groundOffset || 1.2, -1);
+      fbGroup.castShadow = true;
+      model = fbGroup;
       scene.add(model);
-      console.warn("[scene3d] Using fallback capsule — PEP-Smol model not loaded yet");
+
+      // Retry real PEP-Smol load in background
+      tryLoadPepSmol();
     }
 
     return {
