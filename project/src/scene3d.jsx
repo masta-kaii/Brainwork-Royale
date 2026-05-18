@@ -1505,10 +1505,9 @@ function mountRagdollScene(container) {
     const actions = {};
     let groundOffset = 1.0, cx = 0, cz = 0;
 
-    // Build PEP-Smol model — clone from preloaded base or load directly
+    // Use preloaded PEP-Smol model (from app.html preloader)
     const hasBase = !!(window.PEP_BASE && !window.PEP_FAILED);
     const baseModel = hasBase ? window.PEP_BASE : null;
-    console.log("[scene3d] _makeBearInstance: PEP_BASE=" + hasBase + " PEP_FAILED=" + !!window.PEP_FAILED + " anims=" + (hasBase ? baseModel.animations?.length : 'N/A'));
 
     if (baseModel) {
       const tmp = baseModel.scene.clone(true);
@@ -1558,7 +1557,6 @@ function mountRagdollScene(container) {
 
     // If model is null (PEP-Smol not loaded), create a prominent placeholder
     if (!model) {
-      console.warn("[scene3d] PEP-Smol NOT available — using placeholder + trying direct load");
       // Ground marker — impossible to miss
       const markerGeo = new window.THREE.RingGeometry(0.3, 0.5, 32);
       const marker = new window.THREE.Mesh(markerGeo, new window.THREE.MeshBasicMaterial({ color: 0xff4488, side: window.THREE.DoubleSide }));
@@ -1579,7 +1577,6 @@ function mountRagdollScene(container) {
     model.castShadow = true;
     model.receiveShadow = true;
     scene.add(model);
-    console.log("[scene3d] Bear added to scene. realModel=" + !!baseModel + " groundOffset=" + groundOffset.toFixed(2) + " pos=" + model.position.x.toFixed(1) + "," + model.position.y.toFixed(1) + "," + model.position.z.toFixed(1));
 
     return { _id: offsetX, model, mixer, actions, legBones, currentAnim: null, currentAction: null, pendingJoints: null, groundOffset, cx, cz, offsetX };
   }
