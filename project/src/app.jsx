@@ -77,6 +77,16 @@ function App({ user, initialState }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-open class picker for first-time wardens (no class chosen yet)
+  useEffect(() => {
+    const hasPicked = sessionStorage.getItem("classPicked_" + uid);
+    if (!hasPicked && ai.class === (window.dataLayer?.DEFAULT_CHARACTER?.class || "engineer")) {
+      sessionStorage.setItem("classPicked_" + uid, "1");
+      setTimeout(() => setClassModal(true), 800);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
+
   // Redirect to landing if signed out from another tab
   useEffect(() => {
     return window.firebase.onAuthStateChanged((u) => {

@@ -1,6 +1,13 @@
 {
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/((?!project/).*)", "destination": "/project/$1" }
-  ]
+    { "source": "/api/og", "destination": "/project/api/og" },
+    { "source": "/((?!project/|api/).*)", "destination": "/project/$1" }
+  ],
+  "functions": {
+    "project/api/og.js": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 10
+    }
+  }
 }

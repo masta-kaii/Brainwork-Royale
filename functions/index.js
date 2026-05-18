@@ -307,6 +307,70 @@ export const dailyQuestReset = onSchedule("every day 00:00", async () => {
 });
 
 // ============================================================
+// notifyDiscord
+// Posts match results to a Discord webhook. The webhook URL is
+// stored in Firestore config (NOT hardcoded here). Create a doc
+// at /config/discord with { webhookUrl }.
+//   data: { matchId, winner, placement, mazeName, replayUrl }
+// ============================================================
+export const notifyDiscord = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const { matchId, winner, placement, mazeName, replayUrl } = request.data || {};
+
+  if (!matchId) {
+    throw new HttpsError("invalid-argument", "matchId required");
+  }
+
+  try {
+    const configSnap = await db.doc("config/discord").get();
+    const webhookUrl = configSnap.data()?.webhookUrl;
+    if (!webhookUrl) {
+      logger.warn("Discord webhook not configured — skipping notification");
+      return { ok: false, reason: "webhook-not-configured" };
+    }
+
+    const placementLabel = placement === 1 ? "WINNER" : `#${placement}`;
+
+    const body = {
+      embeds: [{
+        title: `🧠 ${winner || "Unknown"} ${placementLabel} — ${mazeName || "Neon Lab"}`,
+        description: placement === 1
+          ? `🏆 **${winner}** secured the treasure in match **${matchId}**!`
+          : `${winner} placed **#${placement}** in match **${matchId}**.`,
+        color: placement === 1 ? 0x5df2d6 : (placement <= 3 ? 0xffb84d : 0x8b91b8),
+        fields: [
+          { name: "Match", value: matchId, inline: true },
+          { name: "Placement", value: `#${placement}`, inline: true },
+        ],
+        footer: { text: "Brainwork Royale · S03 Beta" },
+        timestamp: new Date().toISOString(),
+      }],
+    };
+
+    if (replayUrl) {
+      body.embeds[0].url = replayUrl;
+    }
+
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      logger.error(`Discord webhook failed: ${res.status} ${res.statusText}`);
+      return { ok: false, reason: `http-${res.status}` };
+    }
+
+    logger.info(`Discord notification sent for match ${matchId}`);
+    return { ok: true };
+  } catch (e) {
+    logger.error("Discord webhook error", e);
+    return { ok: false, reason: e.message };
+  }
+});
+
+// ============================================================
 // publishBaseModel  (admin only)
 // Upload a new base NN model that all new users inherit.
 //   data: { version, weights, description }

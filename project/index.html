@@ -234,6 +234,26 @@
       box-shadow: 0 30px 60px -30px oklch(0 0 0 / 0.6),
                   inset 0 0 0 1px oklch(0.85 0.15 175 / 0.05);
     }
+    .viewer--fallback { min-height: 360px; }
+    /* Skeleton placeholder before 3D loads */
+    .viewer__skeleton {
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      background: linear-gradient(180deg, #060810, #0a0d1a);
+      z-index: 10; pointer-events: none;
+      transition: opacity 400ms;
+    }
+    .viewer__skeleton.is-done { opacity: 0; pointer-events: none; }
+    .viewer__skeleton-pulse {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      background: radial-gradient(circle, oklch(0.85 0.15 175 / 0.12), transparent 70%);
+      animation: skelPulse 2s ease-in-out infinite;
+    }
+    @keyframes skelPulse {
+      0%, 100% { transform: scale(0.8); opacity: 0.4; }
+      50% { transform: scale(1.1); opacity: 0.8; }
+    }
     .viewer__top {
       position: absolute; top: 12px; left: 12px; right: 12px;
       display: flex; align-items: center; justify-content: space-between;
@@ -823,6 +843,10 @@
 
       <!-- ====== 3D character viewer ====== -->
       <div class="viewer" id="viewer">
+        <!-- Skeleton placeholder — fades out when 3D loads -->
+        <div class="viewer__skeleton" id="viewerSkeleton">
+          <div class="viewer__skeleton-pulse"></div>
+        </div>
         <div class="viewer__top">
           <div class="viewer__pill">
             <span class="chip__dot" style="background: var(--mint); box-shadow: 0 0 12px var(--mint)"></span>
@@ -1053,6 +1077,64 @@
 <!-- ==================== FIREBASE SDK ==================== -->
 <script type="module" src="src/firebase.js"></script>
 
+<!-- ==================== 3D VIEWER PRE-CHECK ==================== -->
+<script>
+(function() {
+  // Quick GPU tier detection — skip 3D on mobile/low-end devices
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+  const isLowGPU = !gl || (gl.getParameter(gl.RENDERER) || '').includes('SwiftShader');
+  const isMobile = /Mobi|Android/i.test(navigator.userAgent) && window.innerWidth < 900;
+
+  if (isLowGPU || isMobile) {
+    // Fallback: show CSS pixel-bear placeholder instead of 3D
+    const viewer = document.getElementById('viewer');
+    if (viewer) {
+      viewer.classList.add('viewer--fallback');
+      viewer.innerHTML = `
+        <div style="position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,#060810,#0a0d1a)">
+          <div style="text-align:center">
+            <div style="width:120px;height:120px;margin:0 auto 16px;position:relative">
+              <svg viewBox="0 0 100 100" style="width:100%;height:100%" shape-rendering="crispEdges">
+                <rect x="22" y="30" width="10" height="10" fill="#ffc93c"/>
+                <rect x="68" y="30" width="10" height="10" fill="#ffc93c"/>
+                <rect x="32" y="50" width="10" height="10" fill="#1a1d2e"/>
+                <rect x="58" y="50" width="10" height="10" fill="#1a1d2e"/>
+                <rect x="25" y="65" width="50" height="5" fill="#1a1d2e"/>
+                <rect x="30" y="40" width="40" height="25" fill="#8b5a3c" rx="4"/>
+                <rect x="35" y="10" width="10" height="30" fill="#8b5a3c"/>
+                <rect x="55" y="10" width="10" height="30" fill="#8b5a3c"/>
+              </svg>
+            </div>
+            <div style="font-family:var(--font-display);font-size:11px;letter-spacing:0.16em;color:var(--mint);margin-bottom:8px">PEP-SMOL · PIXEL PREVIEW</div>
+            <div style="font-family:var(--font-display);font-size:10px;color:var(--ink-3);letter-spacing:0.1em">${isMobile ? 'OPEN ON DESKTOP FOR FULL 3D' : 'GPU LIMITED · PIXEL MODE'}</div>
+          </div>
+        </div>`;
+      // Replace the stage content
+      const stage = document.getElementById('stage');
+      if (stage) stage.innerHTML = '';
+      // Hide loading elements
+      const loader = document.getElementById('loader');
+      if (loader) loader.classList.add('is-done');
+    }
+    return; // Skip Three.js entirely
+  }
+
+  // Lazy-load the 3D viewer when it enters the viewport
+  window.initLandingViewer = async function() {
+    if (window._viewerStarted) return;
+    window._viewerStarted = true;
+    // Dynamically load Three.js + GLTFLoader only when needed
+    const [THREE, { GLTFLoader }] = await Promise.all([
+      import('three'),
+      import('three/addons/loaders/GLTFLoader.js'),
+    ]);
+    const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+    window._start3DViewer(THREE, GLTFLoader, OrbitControls);
+  };
+})();
+</script>
+
 <!-- ==================== IMPORTMAP + THREE ==================== -->
 <script type="importmap">
 {
@@ -1067,6 +1149,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// Deferred init — called by IntersectionObserver when the viewer enters viewport.
+// GPU fallback already handled by the pre-check script above.
+window._start3DViewer = function(THREE, GLTFLoader, OrbitControls) {
 
 /* ============================================================
    CHARACTER VIEWER — Three.js + physics-smooth playback
@@ -1345,6 +1431,9 @@ gltfLoader.load('assets/pep-smol.gltf',
 function setLoaderDone() {
   loader.classList.add('is-done');
   setTimeout(() => loader.style.display = 'none', 600);
+  // Fade out the CSS skeleton placeholder
+  const skel = document.getElementById('viewerSkeleton');
+  if (skel) { skel.classList.add('is-done'); setTimeout(() => skel.remove(), 500); }
   // fade hint after 4s
   setTimeout(() => hint.classList.add('is-faded'), 4000);
 }
@@ -1451,6 +1540,23 @@ function tick() {
 }
 tick();
 
+}; // end _start3DViewer
+
+// --- IntersectionObserver: lazy-load 3D viewer when visible ---
+const viewerEl = document.getElementById('viewer');
+if (viewerEl && !window._viewerStarted) {
+  const observer = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting) {
+      observer.disconnect();
+      window.initLandingViewer?.();
+    }
+  }, { rootMargin: '200px' });
+  observer.observe(viewerEl);
+}
+
+</script>
+
+<script>
 /* ============================================================
    LOGIN MODAL + INLINE LOGIN
    ============================================================ */
