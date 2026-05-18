@@ -379,11 +379,6 @@ function ClassPickerModal({ activeClass, onPick, onClose }) {
   );
 }
 
-function setBootStatus(msg) {
-  const el = document.getElementById("boot-msg");
-  if (el) el.textContent = msg;
-}
-
 function mountApp(user, initialState) {
   const rootEl = document.getElementById("root");
   while (rootEl.firstChild) rootEl.removeChild(rootEl.firstChild);
@@ -431,34 +426,66 @@ function offlineFallbackState(user) {
 }
 
 function boot() {
+  window.setBootProgress(10);
+
   if (!window.firebase) {
-    setBootStatus("WAITING FOR FIREBASE…");
+    window.setBootStatus("WAITING FOR FIREBASE SDK…");
     window.addEventListener("firebase-ready", boot, { once: true });
     return;
   }
-  setBootStatus("VERIFYING WARDEN ID…");
+  window.setBootProgress(30);
+  window.setBootStatus("FIREBASE READY · CHECKING AUTH…");
+
+  // Auth timeout: if onAuthStateChanged doesn't fire within 15s, surface
+  // the error instead of hanging forever. Common causes: wrong API key,
+  // unauthorized domain, network blocking googleapis.com.
+  const AUTH_TIMEOUT = 15000;
+  const authTimer = setTimeout(() => {
+    const msg = window._bootFailed
+      ? "AUTH TIMED OUT — see error above"
+      : "AUTH TIMED OUT — Firebase auth did not respond. Check: 1) apiKey matches Firebase console 2) authDomain is in Authorized Domains 3) Authentication is enabled in Firebase console 4) googleapis.com is not blocked";
+    window.setBootStatus(msg, true);
+  }, AUTH_TIMEOUT);
+
+  window.setBootStatus("WAITING FOR AUTH STATE…");
   const unsub = window.firebase.onAuthStateChanged(async (user) => {
+    clearTimeout(authTimer);
     unsub();
+    window.setBootProgress(50);
+
     if (!user) {
-      location.replace("/");
+      window.setBootStatus("NO USER · REDIRECTING TO LANDING…");
+      setTimeout(() => { location.replace("/"); }, 600);
       return;
     }
-    setBootStatus("SYNCING PROFILE…");
+    window.setBootProgress(60);
+    window.setBootStatus(`WARDEN FOUND · ${user.email || user.uid.slice(0, 8) + "…"}`);
+
+    window.setBootStatus("SYNCING PROFILE…");
     await ensureUserDoc(user);
+    window.setBootProgress(70);
 
     let initialState;
     try {
       if (window.dataLayer) {
+        window.setBootStatus("SEEDING FIRST-TIME DATA…");
         await window.dataLayer.seedFirstTimeUser(user.uid);
-        setBootStatus("LOADING WARDEN DATA…");
+        window.setBootProgress(80);
+        window.setBootStatus("LOADING WARDEN DATA…");
         initialState = await window.dataLayer.loadPlayerState(user.uid);
+        window.setBootProgress(95);
       } else {
+        window.setBootStatus("DATA LAYER MISSING · USING OFFLINE FALLBACK");
         initialState = offlineFallbackState(user);
       }
     } catch (e) {
+      const msg = e?.message || String(e);
+      window.setBootStatus(`FIRESTORE ERROR · ${msg}`, true);
       console.warn("loadPlayerState failed, using fallback", e);
       initialState = offlineFallbackState(user);
     }
+    window.setBootStatus("MOUNTING APP…");
+    window.setBootProgress(100);
     mountApp(user, initialState);
   });
 }

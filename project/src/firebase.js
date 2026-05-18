@@ -75,20 +75,21 @@ const FIREBASE_CONFIG = {
 // ============================================================
 // Init
 // ============================================================
-const app = initializeApp(FIREBASE_CONFIG);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
+try {
+  const app = initializeApp(FIREBASE_CONFIG);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const storage = getStorage(app);
 
-// ============================================================
-// Expose to non-module code (Babel-compiled <script type="text/babel">
-// cannot use ESM `import`, so we hang everything on window.firebase)
-// ============================================================
-window.firebase = {
-  app,
-  auth,
-  db,
-  storage,
+  // ============================================================
+  // Expose to non-module code (Babel-compiled <script type="text/babel">
+  // cannot use ESM `import`, so we hang everything on window.firebase)
+  // ============================================================
+  window.firebase = {
+    app,
+    auth,
+    db,
+    storage,
 
   // Auth helpers
   onAuthStateChanged: (cb) => onAuthStateChanged(auth, cb),
@@ -104,6 +105,12 @@ window.firebase = {
 
   // Storage primitives
   storageRef, uploadBytes, getDownloadURL,
-};
+  };
 
-window.dispatchEvent(new Event("firebase-ready"));
+  window.dispatchEvent(new Event("firebase-ready"));
+} catch (e) {
+  console.error("[firebase] Init failed", e);
+  window.firebase = null;
+  window.setBootStatus?.("FIREBASE INIT FAILED · " + (e.message || String(e)), true);
+  window.dispatchEvent(new Event("firebase-ready"));
+}
