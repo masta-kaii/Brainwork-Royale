@@ -203,6 +203,16 @@ function createRagdoll(world, originX = 0, originZ = 0) {
     bodies: { torso, lThigh, rThigh, lShin, rShin, lFoot, rFoot },
     joints: { lHip, rHip, lKnee, rKnee, lAnkle, rAnkle },
     spawnY: TORSO_Y,
+    feetY: FOOT_Y - FOOT_R - 0.02,     // bottom of feet (ground level)
+    torsoToFeet: TORSO_Y - (FOOT_Y - FOOT_R - 0.02), // ~1.4m
+    torsoHalf: TORSO_HALF,
+    torsoRadius: TORSO_R,
+    thighHalf: THIGH_HALF,
+    thighRadius: THIGH_R,
+    shinHalf: SHIN_HALF,
+    shinRadius: SHIN_R,
+    footHalf: FOOT_HALF,
+    footRadius: FOOT_R,
     torsoTopY() {
       const t = torso.translation();
       return t.y + TORSO_HALF + TORSO_R;

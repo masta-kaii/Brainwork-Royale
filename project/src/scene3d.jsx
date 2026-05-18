@@ -1459,7 +1459,7 @@ function mountRagdollScene(container) {
       const tmp = window.PEP_BASE.scene.clone(true);
       const box = new THREE.Box3().setFromObject(tmp);
       const size = new THREE.Vector3(); box.getSize(size);
-      const targetH = 1.7;
+      const targetH = 2.35;  // match ragdoll physics height exactly
       const scale = targetH / Math.max(size.y, 0.1);
       groundOffset = -box.min.y * scale;
       cx = (box.min.x + box.max.x) / 2 * scale;
@@ -1599,15 +1599,19 @@ function mountRagdollScene(container) {
 
   // Apply a single Rapier snapshot to bear `bearIdx`. snap.bodies.torso
   // drives where THIS bear is rendered. Also updates physics debug skeleton.
+  // TORSO_TO_FEET = ~1.89m — distance from ragdoll torso center to feet bottom.
+  // Computed from ragdoll dimensions: TORSO_Y(1.80) - feet_bottom(-0.09) = 1.89
+  const TORSO_TO_FEET = 1.89;
   function applySnapshot(snap, bearIdx = 0) {
     const b = bears[bearIdx];
     if (!b || !b.model) return;
     const bodies = (snap && snap.bodies) || snap;
     const torso = bodies?.torso;
     if (!torso) return;
+    // Position model so its feet align with physics feet
     b.model.position.set(
-      torso.x - b.cx + b.offsetX,                          // shift into this bear's lane
-      Math.max(0, torso.y - 0.9) + (b.groundOffset || 0),
+      torso.x - b.cx + b.offsetX,
+      Math.max(0, torso.y - TORSO_TO_FEET) + (b.groundOffset || 0),
       torso.z - b.cz
     );
     b.model.quaternion.set(torso.qx, torso.qy, torso.qz, torso.qw);
