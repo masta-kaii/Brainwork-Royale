@@ -4,11 +4,16 @@
 
 const { useState, useEffect, useRef, useMemo } = React;
 
-// Pre-build a few replays so Replays tab isn't empty on first load
-function buildSeedReplays(ai) {
+// Pre-build a few replays so Replays tab isn't empty on first load.
+// Uses demo brains if available so battles show brain-driven movement.
+function buildSeedReplays(ai, brains) {
+  const demoBrain = brains?.["walk-L1"] || brains?.["balance-L1"] || null;
+  const seedAi = demoBrain
+    ? { ...ai, brain: window.brainEngine?.brainFromJSON?.(demoBrain) || null }
+    : ai;
   const seeds = [13371, 92024, 4815];
   return seeds.map((seed, i) => {
-    const r = buildReplay(seed, ai, 600);
+    const r = buildReplay(seed, seedAi, 600);
     return {
       ...r,
       id: `M-${seed.toString().padStart(4, "0")}`,
@@ -30,7 +35,7 @@ function App({ user, initialState }) {
   const [brains, setBrains] = useState(initialState.brains || {});
   const [toast, setToast] = useState(null);
   const [battleSeed, setBattleSeed] = useState(8201);
-  const [replays, setReplays] = useState(() => buildSeedReplays(initialState.character));
+  const [replays, setReplays] = useState(() => buildSeedReplays(initialState.character, initialState.brains));
   const [classModal, setClassModal] = useState(false);
 
   // AI object passed to BattleScreen includes the trained skill levels so
@@ -451,8 +456,37 @@ function offlineFallbackState(user) {
     character: dl ? { ...dl.DEFAULT_CHARACTER } : { name: "Berok 1", class: "engineer", tier: "Bronze", generation: 1, trainingQueue: 0, stats: { speed: 50, stamina: 50, intelligence: 50, strength: 50 } },
     quests: dl ? dl.DEFAULT_QUESTS.map((q) => ({ ...q, status: "active", rewardClaimed: false })) : [],
     skills: fallbackSkills,
-    brains: {},
+    brains: generateDemoBrains(),
   };
+}
+
+// Pre-seeded demo brains so the fitness dashboard isn't empty on first load.
+// Uses the brain engine to generate real weight matrices with plausible meta.
+function generateDemoBrains() {
+  const be = window.brainEngine;
+  if (!be?.makeBrain || !be?.brainToJSON) return {};
+
+  const demos = {};
+
+  // Walk L1 — a partially-trained walker that shuffles forward
+  if (typeof be.makeBrain === "function") {
+    const walkBrain = be.makeBrain({ inputs: 14, hidden: 20, outputs: 4 });
+    demos["walk-L1"] = be.brainToJSON(walkBrain, {
+      skillId: "walk", level: 1, envId: "walk-L1",
+      gen: 20, fitness: 4.2, mastered: false,
+    });
+  }
+
+  // Balance L1 — a wobbly but standing bear
+  if (typeof be.makeBrain === "function") {
+    const balBrain = be.makeBrain({ inputs: 12, hidden: 16, outputs: 4 });
+    demos["balance-L1"] = be.brainToJSON(balBrain, {
+      skillId: "balance", level: 1, envId: "balance-L1",
+      gen: 8, fitness: 2.8, mastered: false,
+    });
+  }
+
+  return demos;
 }
 
 function refreshDailyQuests(state, uid) {
