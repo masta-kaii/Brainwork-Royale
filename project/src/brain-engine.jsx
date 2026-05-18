@@ -117,17 +117,15 @@ function isReady() { return !!window.RAPIER && !window.RAPIER_FAILED; }
 
 function _capsuleBody(world, x, y, z, halfHeight, radius, density = 1.0) {
   const RAPIER = window.RAPIER;
-  // Higher damping than before so flailing decays naturally. User feedback:
-  // "swinging around recklessly, not realistic". This pulls velocities down
-  // without changing the brain's torque interface.
+  // Higher damping so the ragdoll settles quickly instead of swinging forever
   const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
-    .setLinearDamping(0.4)
-    .setAngularDamping(1.2);
+    .setLinearDamping(0.8)
+    .setAngularDamping(2.5);
   const body = world.createRigidBody(bodyDesc);
   const colDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius)
     .setDensity(density)
-    .setFriction(0.95)
+    .setFriction(1.5)
     .setRestitution(0.0);
   world.createCollider(colDesc, body);
   return body;
@@ -272,24 +270,20 @@ function makeWorld() {
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
 
   const ROOM_W = 10, ROOM_D = 10, ROOM_H = 4;
-  const WALL_THICK = 0.3;
+  const WALL_DEPTH = 0.5;  // thicker walls prevent tunneling
 
-  // Solid floor
-  const floorBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.15, 0));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(ROOM_W, 0.15, ROOM_D).setFriction(0.95), floorBody);
+  // Thick solid floor — prevents feet from pushing through
+  const floorBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.4, 0));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(ROOM_W, 0.4, ROOM_D).setFriction(1.2).setRestitution(0.0), floorBody);
 
-  // Walls — four sides
-  const wall1 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, ROOM_H / 2, -ROOM_D));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(ROOM_W, ROOM_H / 2, WALL_THICK).setFriction(0.5), wall1);
-
-  const wall2 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, ROOM_H / 2, ROOM_D));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(ROOM_W, ROOM_H / 2, WALL_THICK).setFriction(0.5), wall2);
-
-  const wall3 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(-ROOM_W, ROOM_H / 2, 0));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(WALL_THICK, ROOM_H / 2, ROOM_D).setFriction(0.5), wall3);
-
-  const wall4 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(ROOM_W, ROOM_H / 2, 0));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(WALL_THICK, ROOM_H / 2, ROOM_D).setFriction(0.5), wall4);
+  // Thick walls — 4 sides, high friction
+  for (const [x, z] of [[0, -ROOM_D], [0, ROOM_D], [-ROOM_W, 0], [ROOM_W, 0]]) {
+    const isX = z === 0;
+    const w = isX ? WALL_DEPTH : ROOM_W;
+    const d = isX ? ROOM_D : WALL_DEPTH;
+    const wBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, ROOM_H / 2, z));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(w, ROOM_H / 2, d).setFriction(1.0).setRestitution(0.0), wBody);
+  }
 
   return world;
 }
