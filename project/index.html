@@ -1124,13 +1124,15 @@
   window.initLandingViewer = async function() {
     if (window._viewerStarted) return;
     window._viewerStarted = true;
-    // Dynamically load Three.js + GLTFLoader only when needed
-    const [THREE, { GLTFLoader }] = await Promise.all([
+    // Dynamically load Three.js + GLTFLoader + DRACOLoader only when needed
+    const [THREE, { GLTFLoader }, dracoModule] = await Promise.all([
       import('three'),
       import('three/addons/loaders/GLTFLoader.js'),
+      import('three/addons/loaders/DRACOLoader.js').catch(() => null),
     ]);
     const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
-    window._start3DViewer(THREE, GLTFLoader, OrbitControls);
+    const DRACOLoader = dracoModule?.DRACOLoader;
+    window._start3DViewer(THREE, GLTFLoader, OrbitControls, DRACOLoader);
   };
 })();
 </script>
@@ -1152,7 +1154,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // Deferred init — called by IntersectionObserver when the viewer enters viewport.
 // GPU fallback already handled by the pre-check script above.
-window._start3DViewer = function(THREE, GLTFLoader, OrbitControls) {
+window._start3DViewer = function(THREE, GLTFLoader, OrbitControls, DRACOLoader) {
 
 /* ============================================================
    CHARACTER VIEWER — Three.js + physics-smooth playback
@@ -1361,8 +1363,36 @@ let currentClipName = null;
 let charRoot = null;
 
 const gltfLoader = new GLTFLoader();
-gltfLoader.load('assets/pep-smol.gltf',
-  (gltf) => {
+
+// Draco decoder — 39% smaller model (5.4 vs 8.8 MB)
+if (DRACOLoader) {
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+  gltfLoader.setDRACOLoader(dracoLoader);
+}
+
+function loadModel(url) {
+  return new Promise((resolve, reject) => {
+    gltfLoader.load(url, resolve,
+      (xhr) => {
+        const pct = xhr.total ? Math.round(xhr.loaded / xhr.total * 100) : Math.min(99, Math.round(xhr.loaded / 1.5e5));
+        loadText.textContent = `DECRYPTING RIG · ${pct}%`;
+        loadBar.style.width = pct + '%';
+      },
+      reject
+    );
+  });
+}
+
+let pepGltf;
+try {
+  pepGltf = await loadModel('assets/pep-smol-draco.glb');
+} catch (e) {
+  console.warn("Draco GLB failed, trying uncompressed", e);
+  pepGltf = await loadModel('assets/pep-smol.gltf');
+}
+
+const gltf = pepGltf;
     charRoot = gltf.scene;
     // Scale & center
     const box = new THREE.Box3().setFromObject(charRoot);
@@ -1410,23 +1440,7 @@ gltfLoader.load('assets/pep-smol.gltf',
     // default action
     const startName = gltf.animations.find(c => /^idle 01/i.test(c.name))?.name || gltf.animations[0].name;
     playAnim(startName, 0);
-  },
-  (xhr) => {
-    if (xhr.total) {
-      const pct = Math.round((xhr.loaded / xhr.total) * 100);
-      loadText.textContent = `DECRYPTING RIG · ${pct}%`;
-      loadBar.style.width = pct + '%';
-    } else {
-      loadText.textContent = `LOADING · ${Math.round(xhr.loaded / 1024)} KB`;
-      loadBar.style.width = ((xhr.loaded / 1.5e7 * 100) | 0) + '%';
-    }
-  },
-  (err) => {
-    loadText.textContent = 'FAILED TO LOAD RIG';
-    loadText.style.color = 'var(--magenta)';
-    console.error(err);
-  }
-);
+}
 
 function setLoaderDone() {
   loader.classList.add('is-done');

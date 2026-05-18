@@ -64,3 +64,7 @@ functions/.env.*
 # If you still want to keep your filled-in config off git anyway,
 # uncomment the line below and use firebase.example.js as the template:
 # project/src/firebase.js
+
+# ---- Draco-compressed 3D assets (generated via gltf-pipeline) ----
+project/assets/pep-smol-draco.glb
+project/assets/pep-smol-compressed.glb

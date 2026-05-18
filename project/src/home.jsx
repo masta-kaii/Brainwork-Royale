@@ -255,6 +255,21 @@ function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest, onStartBatt
               <StatBlock stats={ai.stats} />
               <div className="divider" />
               <div className="mono tiny" style={{ color: "var(--ink-3)", marginBottom: 6 }}>
+                HEALTH CONNECTORS
+              </div>
+              <button
+                className="btn btn--ghost btn--sm"
+                style={{ fontSize: 10, justifyContent: "flex-start", gap: 6 }}
+                onClick={() => {
+                  window.open("/api/strava/auth", "strava", "width=600,height=700");
+                }}
+                title="Connect Strava to sync your runs/walks → STA stat"
+              >
+                <span style={{ color: "var(--amber)", fontWeight: 700 }}>◆</span>
+                Connect Strava
+              </button>
+              <div className="divider" />
+              <div className="mono tiny" style={{ color: "var(--ink-3)", marginBottom: 6 }}>
                 TRAINING QUEUE
               </div>
               <div className="row between">
@@ -274,6 +289,40 @@ function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest, onStartBatt
                 </span>
                 <span className="mono tiny" style={{ color: "var(--ink-3)" }}>4m ago</span>
               </div>
+              <div className="card__title" style={{ fontSize: 14, marginBottom: 4 }}>
+                Neon Lab · Tier {ai.tier}
+              </div>
+              <div className="mono tiny" style={{ color: "var(--ink-2)" }}>
+                Survived 2:14 · 3 KOs · Treasure secured
+              </div>
+              <div className="row" style={{ marginTop: 10, gap: 4 }}>
+              </div>
+            </div>
+
+            {/* Brain fitness overview — compact sparkline per trained skill */}
+            <SectionTitle>Brain fitness</SectionTitle>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {(window.dataLayer?.SKILL_DEFS || []).filter(d => d.isReal).map((def) => {
+                const key = window.skillTree?.brainKey(def.id, 1);
+                const brain = ai._brains?.[key];
+                const fitness = brain?.meta?.fitness;
+                const gen = brain?.meta?.gen;
+                const mastered = brain?.meta?.mastered;
+                return (
+                  <div key={def.id} className="row between" style={{ padding: "4px 8px", background: "var(--bg-1)", borderRadius: 6, border: "1px solid var(--line-soft)" }}>
+                    <div className="row" style={{ gap: 8, minWidth: 0 }}>
+                      <span style={{ fontFamily: "var(--font-display)", fontSize: 14, width: 20, textAlign: "center", color: mastered ? "var(--amber)" : "var(--mint)" }}>
+                        {def.glyph}
+                      </span>
+                      <span className="mono tiny" style={{ color: "var(--ink-1)" }}>{def.name}</span>
+                    </div>
+                    <span className="mono tiny" style={{ color: fitness ? (mastered ? "var(--amber)" : "var(--mint)") : "var(--ink-3)" }}>
+                      {fitness ? `${fitness.toFixed(2)} · gen ${gen || "?"}` : "untrained"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
               <div className="card__title" style={{ fontSize: 14, marginBottom: 4 }}>
                 Neon Lab · Tier {ai.tier}
               </div>

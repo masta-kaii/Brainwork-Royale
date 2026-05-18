@@ -271,7 +271,7 @@ function App({ user, initialState }) {
           {tab === "home" && (
             <HomeScreen
               player={player}
-              ai={ai}
+              ai={{ ...ai, _brains: brains }}
               dailyQuests={quests.slice(0, 4)}
               completeQuest={completeQuest}
               latestReplay={replays[0]}

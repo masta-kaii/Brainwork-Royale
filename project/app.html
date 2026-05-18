@@ -107,21 +107,49 @@
     window.GLTFLoader = GLTFLoader;
     window.OrbitControls = OrbitControls;
 
-    // Pre-load PEP-Smol once for the whole app
-    window.setBootProgress(5);
-    const loader = new GLTFLoader();
-    try {
-      const gltf = await new Promise((resolve, reject) => {
-        loader.load('assets/pep-smol.gltf',
-          resolve,
+    // Pre-load PEP-Smol once for the whole app — try Draco-compressed GLB first,
+    // fall back to uncompressed GLTF. Draco is 39% smaller (5.4 vs 8.8 MB).
+    window.setBootProgress(2);
+    const pePUrl = 'assets/pep-smol-draco.glb';
+    const pePFallback = 'assets/pep-smol.gltf';
+
+    async function loadPep() {
+      const loader = new GLTFLoader();
+
+      // Try Draco-compressed first
+      try {
+        const dracoModule = await import('three/addons/loaders/DRACOLoader.js');
+        const DRACOLoader = dracoModule.DRACOLoader;
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+        loader.setDRACOLoader(dracoLoader);
+        window.setBootStatus("DRACO DECODER READY");
+      } catch (e) {
+        console.warn("Draco loader unavailable, falling back to uncompressed", e);
+      }
+
+      const doLoad = (url, isFallback) => new Promise((resolve, reject) => {
+        loader.load(url,
+          (gltf) => resolve(gltf),
           (xhr) => {
             const pct = xhr.total ? Math.round(xhr.loaded / xhr.total * 100) : Math.min(99, Math.round(xhr.loaded / 1.5e5));
-            window.setBootStatus(`DECRYPTING RIG · ${pct}%`);
-            window.setBootProgress(5 + Math.round(pct * 0.25));
+            window.setBootStatus(`DECRYPTING RIG · ${pct}%${isFallback ? ' (uncompressed)' : ''}`);
+            window.setBootProgress(2 + Math.round(pct * 0.26));
           },
-          reject
+          (err) => reject(err)
         );
       });
+
+      try {
+        return await doLoad(pePUrl, false);
+      } catch (e) {
+        console.warn("Draco GLB load failed, trying uncompressed", e);
+        return await doLoad(pePFallback, true);
+      }
+    }
+
+    try {
+      const gltf = await loadPep();
       window.PEP_BASE = gltf;
       window.PEP_READY = true;
       window.setBootStatus("PEP-SMOL RIG READY");
