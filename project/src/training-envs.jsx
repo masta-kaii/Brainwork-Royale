@@ -314,14 +314,6 @@ function _observeWalk(rag, target) {
   return [...base, dx, dz];
 }
 
-function _walkFitness(env, tick, alive) {
-  const t = env.rag.bodies.torso.translation();
-  const progress = Math.max(0, Math.min(t.z, env.targetZ));      // capped at target Z
-  const reachedBonus = env.reached ? 3 : 0;
-  const uprightBonus = alive ? 0.5 : 0;
-  return progress + reachedBonus + uprightBonus;
-}
-
 function _walkDone(env) {
   if (env.rag.torsoTopY() < FALLEN_Y) return true;
   const t = env.rag.bodies.torso.translation();

@@ -10,6 +10,16 @@ Thumbs.db
 # ---- FWOG Memory Core (local only, do not push) ----
 memory core/
 
+# ---- Design handoff artifacts ----
+chats/
+Claude Plan/
+project/uploads/
+project/screens/
+
+# ---- Large 3D assets (compressed derivatives generated at deploy time) ----
+project/assets/pep-smol-draco.glb
+project/assets/pep-smol-compressed.glb
+
 # ---- Node / package managers ----
 node_modules/
 npm-debug.log*
@@ -37,8 +47,6 @@ out/
 secrets.json
 
 # ---- Firebase admin credentials (REAL secrets) ----
-# Service-account / admin-SDK keys grant full backend access.
-# Anyone with this file owns your Firestore + Auth.
 serviceAccountKey.json
 firebase-adminsdk-*.json
 google-services.json
@@ -54,17 +62,3 @@ functions/.runtimeconfig.json
 functions/lib/
 functions/.env
 functions/.env.*
-
-# ---- Note on Firebase web config ----
-# The web config in project/src/firebase.js (apiKey, authDomain, projectId,
-# etc.) is NOT secret. Firebase ships it inside every client app. Anyone
-# can read it via DevTools. Real security comes from Firestore Security
-# Rules + Auth restrictions, not from hiding these values.
-#
-# If you still want to keep your filled-in config off git anyway,
-# uncomment the line below and use firebase.example.js as the template:
-# project/src/firebase.js
-
-# ---- Draco-compressed 3D assets (generated via gltf-pipeline) ----
-project/assets/pep-smol-draco.glb
-project/assets/pep-smol-compressed.glb
