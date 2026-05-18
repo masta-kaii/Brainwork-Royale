@@ -4,9 +4,9 @@
     { "source": "/((?!project/|api/).*)", "destination": "/project/$1" }
   ],
   "functions": {
-    "api/og.js": { "runtime": "nodejs20.x", "maxDuration": 10 },
-    "api/strava/auth.js": { "runtime": "nodejs20.x", "maxDuration": 8 },
-    "api/strava/callback.js": { "runtime": "nodejs20.x", "maxDuration": 8 },
-    "api/strava/sync.js": { "runtime": "nodejs20.x", "maxDuration": 15 }
+    "api/og.js": { "maxDuration": 10 },
+    "api/strava/auth.js": { "maxDuration": 8 },
+    "api/strava/callback.js": { "maxDuration": 8 },
+    "api/strava/sync.js": { "maxDuration": 15 }
   }
 }
