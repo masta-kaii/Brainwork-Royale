@@ -48,8 +48,15 @@ function BattleScreen({ ai, seed, mode = "battle", onReseed, onToast, onMatchCom
   React.useEffect(() => {
     if (!stageRef.current) return;
 
-    // sim
-    const sim = isRace ? createRaceSim(seed, ai) : createBattleSim(seed, ai);
+    // sim — pass bot brains so opposing agents also get speed boosts
+    const BOT_BRAIN_COUNT = 7;
+    const botBrains = Array.from({ length: BOT_BRAIN_COUNT }, (_, i) => {
+      // Seed each bot brain slightly differently so they have varied gaits
+      return window.brainEngine?.makeBrain?.(window.brainEngine?.DEFAULT_ARCH) || null;
+    });
+    const sim = isRace
+      ? createRaceSim(seed, ai, { botBrains })
+      : createBattleSim(seed, ai, { botBrains });
     simRef.current = sim;
     completedRef.current = false;
 

@@ -132,7 +132,7 @@ function NextMatchCountdown({ targetMs }) {
   return <span>{pad(h)}:{pad(m)}:{pad(s)}</span>;
 }
 
-function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest }) {
+function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest, onStartBattle }) {
   const nextMatchTime = React.useMemo(() => Date.now() + 1000 * 60 * 47 + 1000 * 23, []);
 
   return (
@@ -167,7 +167,10 @@ function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest }) {
               <small>Until drop · Auto-enter ON</small>
             </div>
             <div className="hero-match__actions">
-              <button className="btn btn--primary" onClick={() => onNav("battle")}>
+              <button className="btn btn--primary" onClick={onStartBattle} style={{ fontSize: 13, padding: "12px 22px" }}>
+                ⚔ Drop into a maze
+              </button>
+              <button className="btn btn--ghost" onClick={() => onNav("battle")}>
                 ▶ Watch live battle
               </button>
               <button className="btn btn--ghost" onClick={() => onNav("brain")}>

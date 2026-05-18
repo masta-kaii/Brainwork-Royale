@@ -207,6 +207,7 @@ function createBattleSim(seed, you, opts) {
   const rows = opts?.rows ?? 15;
   const mazeGen = opts?.mazeGen ?? genMaze;
   const numAgents = opts?.numAgents ?? 8;
+  const botBrains = opts?.botBrains || [];   // pre-loaded brain JSONs for opposing agents
   const maze = mazeGen(cols, rows, seed);
   const { grid, treasure, obstacles } = maze;
   const spawnPool = opts?.spawnPool ?? defaultBattleSpawns(cols, rows);
@@ -237,17 +238,25 @@ function createBattleSim(seed, you, opts) {
     const speedPerTick = Math.max(0.08, effectiveSpeed * 0.005);
     const attackCooldownBase = Math.max(4, 8 - cdBonus);
 
+    // Bot agents get a brain too — the player's trained brain goes to the
+    // player, and any pre-loaded bot brains are cycled through opponents.
+    // A bot with a brain moves faster (brainBoost) just like the player.
+    const agentBrain = i === 0
+      ? (you.brain || null)
+      : (botBrains[(i - 1) % botBrains.length] || null);
+
     agents.push({
       id: i,
       name: i === 0 ? you.name : AGENT_NAMES[i],
       cls,
       color: c.color,
       isYou: i === 0,
-      // Reference to an exported brain JSON for the player. If a trained
-      // locomotion brain is attached we run inference each step and use
-      // its output magnitude to modulate move cooldown — the trained
-      // bear visibly moves more decisively than an untrained one.
-      brain: i === 0 ? (you.brain || null) : null,
+      // Reference to an exported brain JSON. If a trained locomotion
+      // brain is attached we run inference each step and use its output
+      // magnitude to modulate move cooldown — the trained bear visibly
+      // moves more decisively than an untrained one. Bot agents cycle
+      // through any pre-loaded bot brains.
+      brain: agentBrain,
       brainBoost: 1.0,                              // updated each tick if brain present
       x: sx, y: sy,                 // continuous floats
       prevX: sx, prevY: sy,
@@ -343,10 +352,10 @@ function createBattleSim(seed, you, opts) {
         a.path = bfsPath(grid, cols, rows, [cellX, cellY], goal);
       }
 
-      // ---- Brain inference (player agent only, if a trained brain is attached) ----
+      // ---- Brain inference (any agent with a trained brain attached) ----
       // The exported locomotion brain runs forward with a synthesized
       // observation; its output magnitude becomes a speed multiplier so
-      // the trained bear visibly moves with more conviction.
+      // a trained bear visibly moves with more conviction than an untrained one.
       if (a.brain && a.path && a.path.length > 1) {
         const fe = window.brainEngine?.forward;
         if (fe) {
@@ -491,13 +500,14 @@ function createBattleSim(seed, you, opts) {
 }
 
 // Race mode factory — same engine, different map + spawn shape
-function createRaceSim(seed, you) {
+function createRaceSim(seed, you, extraOpts = {}) {
   const cols = 9, rows = 30;
   return createBattleSim(seed, you, {
     cols, rows,
     mazeGen: genRaceTrack,
     numAgents: 6,
     spawnPool: defaultRaceSpawns(cols, rows, 6),
+    ...extraOpts,
   });
 }
 

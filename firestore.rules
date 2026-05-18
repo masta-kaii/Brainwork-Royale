@@ -100,5 +100,13 @@ service cloud.firestore {
     }
 
     // Default: everything else denied (no fall-through allow)
+
+    // ---------- /waitlist/{email} ----------
+    // Beta waitlist — public create, owner read
+    match /waitlist/{email} {
+      allow read: if isSignedIn();
+      allow create: if true;
+      allow write: if isAdmin();
+    }
   }
 }

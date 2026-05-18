@@ -168,6 +168,22 @@ function App({ user, initialState }) {
       const def = (window.dataLayer?.SKILL_DEFS || []).find((s) => s.id === skillId);
       const isMastered = level >= (window.dataLayer?.MAX_LEVEL || 3);
       showToast(`${def?.name || skillId} ${isMastered ? "MASTERED" : `→ L${level}`}`);
+
+      // Bump the warden's stat on skill level-up so training feeds into battle.
+      // stat mapping: balance→STA, walk→STA, run→SPD, jump→STA, dodge→SPD, attack→STR, combo→STR
+      const statMap = {
+        balance: "stamina", walk: "stamina", run: "speed",
+        jump: "stamina", dodge: "speed", attack: "strength", combo: "strength",
+      };
+      const statKey = statMap[skillId];
+      if (statKey) {
+        const boost = level >= (window.dataLayer?.MAX_LEVEL || 3) ? 6 : 2;
+        setAi((a) => {
+          const newStats = { ...a.stats, [statKey]: Math.min(100, a.stats[statKey] + boost) };
+          window.dataLayer?.saveCharacterStats(uid, newStats);
+          return { ...a, stats: newStats };
+        });
+      }
     }
   };
 
@@ -250,6 +266,10 @@ function App({ user, initialState }) {
               completeQuest={completeQuest}
               latestReplay={replays[0]}
               onNav={setTab}
+              onStartBattle={() => {
+                setBattleSeed(Math.floor(Math.random() * 90000) + 1000);
+                setTab("battle");
+              }}
             />
           )}
           {tab === "quests" && (
