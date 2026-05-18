@@ -17,7 +17,7 @@ function getDb() {
   return getFirestore();
 }
 
-async function refreshToken(db, connectorId, refreshToken) {
+async function refreshToken(db, uid, connectorId, refreshToken) {
   const configSnap = await db.doc("config/strava").get();
   const { clientId, clientSecret } = configSnap.data() || {};
 
@@ -35,7 +35,7 @@ async function refreshToken(db, connectorId, refreshToken) {
   if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
   const data = await res.json();
 
-  await db.doc(`connectors/${connectorId}`).update({
+  await db.doc(`connectors/${uid}/${connectorId}`).update({
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresAt: new Date(data.expires_at * 1000),
@@ -61,7 +61,8 @@ export default async function handler(req) {
     }
 
     const db = getDb();
-    const connDoc = await db.doc(`connectors/${connectorId}`).get();
+    const userUid = uid || "anonymous";
+    const connDoc = await db.doc(`connectors/${userUid}/${connectorId}`).get();
     if (!connDoc.exists) {
       return new Response(JSON.stringify({ error: "Connector not found" }), {
         status: 404,
@@ -74,7 +75,7 @@ export default async function handler(req) {
 
     // Check if token needs refresh
     if (conn.expiresAt && conn.expiresAt.toMillis() < Date.now()) {
-      accessToken = await refreshToken(db, connectorId, conn.refreshToken);
+      accessToken = await refreshToken(db, userUid, connectorId, conn.refreshToken);
     }
 
     // Fetch recent activities (last 7 days)
@@ -110,8 +111,8 @@ export default async function handler(req) {
     // Calculate STA gain: 1 STA per 1,000 steps
     const staGain = Math.min(20, Math.floor(totalSteps / 1000));
 
-    // Update connector last sync
-    await db.doc(`connectors/${connectorId}`).update({
+  // Store updated tokens
+  await db.doc(`connectors/${userUid}/${connectorId}`).update({
       lastSyncedAt: FieldValue.serverTimestamp(),
       lastSyncDistance: totalDistance,
       lastSyncSteps: Math.round(totalSteps),

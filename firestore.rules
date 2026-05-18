@@ -108,5 +108,38 @@ service cloud.firestore {
       allow create: if true;
       allow write: if isAdmin();
     }
+
+    // ---------- /connectors/{uid}/{connectorId} ----------
+    // Strava/etc OAuth tokens — stored per-user, owner only
+    match /connectors/{uid}/{connectorId} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if true;  // OAuth callback needs to write
+      allow update: if isOwner(uid) || isAdmin();
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    // ---------- /_stravaOAuth/{stateId} ----------
+    // Temporary OAuth state (PKCE verifier) — auto-deleted after callback
+    match /_stravaOAuth/{stateId} {
+      allow read, create: if true;
+      allow delete: if true;
+      allow update: if false;
+    }
+
+    // ---------- /users/{uid}/questLog/{docId} ----------
+    // Rate-limiting for quest submissions — functions-only write
+    match /users/{uid}/questLog/{docId} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if false;
+      allow write: if false;
+    }
+
+    // ---------- /users/{uid}/streaks/{docId} ----------
+    // Daily streak tracking — functions-only write
+    match /users/{uid}/streaks/{docId} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if false;
+      allow write: if false;
+    }
   }
 }

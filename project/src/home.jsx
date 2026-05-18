@@ -261,7 +261,7 @@ function HomeScreen({ player, ai, onNav, dailyQuests, completeQuest, onStartBatt
                 className="btn btn--ghost btn--sm"
                 style={{ fontSize: 10, justifyContent: "flex-start", gap: 6 }}
                 onClick={() => {
-                  window.open("/api/strava/auth", "strava", "width=600,height=700");
+                  window.open(`/api/strava/auth?uid=${encodeURIComponent(player.uid)}`, "strava", "width=600,height=700");
                 }}
                 title="Connect Strava to sync your runs/walks → STA stat"
               >

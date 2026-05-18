@@ -46,7 +46,7 @@ export default async function handler(req) {
     if (!stateDoc.exists) {
       return new Response("OAuth state expired or invalid — please try again", { status: 400 });
     }
-    const { codeVerifier, redirectUri } = stateDoc.data();
+    const { codeVerifier, uid } = stateDoc.data();
 
     // Clean up state
     await db.doc(`_stravaOAuth/${state}`).delete();
@@ -79,8 +79,9 @@ export default async function handler(req) {
     // Generate a local connector ID for this user
     const connectorId = makeId();
 
-    // Store tokens in Firestore (encrypted at rest by Firestore)
-    await db.doc(`connectors/${connectorId}`).set({
+    // Store tokens under user's path so Firestore rules protect them
+    const userUid = uid || "anonymous";
+    await db.doc(`connectors/${userUid}/${connectorId}`).set({
       provider: "strava",
       athleteId: tokenData.athlete?.id,
       athleteName: tokenData.athlete

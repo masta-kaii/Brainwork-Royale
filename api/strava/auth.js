@@ -34,6 +34,9 @@ async function sha256(str) {
 
 export default async function handler(req) {
   try {
+    const { searchParams } = new URL(req.url);
+    const uid = searchParams.get("uid") || "anonymous";
+
     const db = getDb();
     const configSnap = await db.doc("config/strava").get();
     const config = configSnap.data() || {};
@@ -47,12 +50,12 @@ export default async function handler(req) {
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = await sha256(codeVerifier);
 
-    // Store verifier temporarily (5 min TTL) so callback can use it
+    // Store verifier + uid temporarily so callback can link tokens to user
     const state = crypto.randomUUID();
     await db.doc(`_stravaOAuth/${state}`).set({
       codeVerifier,
+      uid,
       createdAt: Date.now(),
-      redirectUri,
     });
 
     const authUrl = new URL("https://www.strava.com/oauth/authorize");
