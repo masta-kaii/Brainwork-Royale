@@ -16,8 +16,7 @@ Claude Plan/
 project/uploads/
 project/screens/
 
-# ---- Large 3D assets (compressed derivatives generated at deploy time) ----
-project/assets/pep-smol-draco.glb
+# ---- Large 3D assets (only keep the Draco-compressed GLB committed) ----
 project/assets/pep-smol-compressed.glb
 
 # ---- Node / package managers ----
